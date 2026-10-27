@@ -88,13 +88,14 @@ def collect_craftax_batch(
         out = ((obs * 255).round().astype(jnp.uint8), actions, rewards, dones, states.achievements)
         return (keys, states, obs, pkey), out
 
-    @jax.jit
-    def run_chunk(carry: Any) -> Any:
+    def scan_chunk(carry: Any) -> Any:
         return jax.lax.scan(one_step, carry, None, length=chunk)
+
+    run_chunk = jax.jit(scan_chunk)
 
     first = np.asarray((obs * 255).round().astype(jnp.uint8))
     carry = (keys, states, obs, jax.random.PRNGKey(policy_seed))
-    parts: list[tuple[np.ndarray, ...]] = []
+    parts: list[tuple[np.ndarray[Any, Any], ...]] = []
     done_any = np.zeros(len(seeds), dtype=bool)
     steps = 0
     while steps < max_steps and not done_any.all():

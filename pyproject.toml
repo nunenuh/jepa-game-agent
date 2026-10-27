@@ -57,4 +57,7 @@ addopts = "-q --cov=jepa_game_agent --cov-report=term-missing --cov-fail-under=8
 markers = ["craftax: needs the optional craftax extra (skipped when it isn't installed)"]
 
 [tool.coverage.run]
-omit = ["src/jepa_game_agent/envs/craftax.py"]
+omit = [  # need the craftax extra: tested in the craftax CI job
+    "src/jepa_game_agent/envs/craftax.py",
+    "src/jepa_game_agent/data/craftax_batch.py",
+]
