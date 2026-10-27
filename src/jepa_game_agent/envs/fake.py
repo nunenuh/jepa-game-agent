@@ -45,8 +45,15 @@ class GridWorld:
             self.item = self._random_cell(avoid=self.agent)
         self.t += 1
         return StepResult(
-            self.render(), reward, self.t >= self.max_steps, {"agent_row": self.agent[0], "agent_col": self.agent[1]}
+            self.render(),
+            reward,
+            self.t >= self.max_steps,
+            {"agent_row": self.agent[0], "agent_col": self.agent[1]},
+            ("collect_item",) if reward else (),
         )
+
+    def state_key(self) -> tuple[int, ...]:
+        return self.agent
 
     def set_agent(self, row: int, col: int) -> Frame:
         """Teleport the agent (an 'impossible' event, for surprise tests)."""

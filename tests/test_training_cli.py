@@ -60,3 +60,41 @@ def test_cli_collect_reports_a_data_card(tmp_path: Path, capsys: pytest.CaptureF
     card = json.loads(capsys.readouterr().out)
     assert card["collector"] == "single" and card["achievements"] == {}
     assert card["length"] == {"min": 10, "mean": 10.0, "max": 10}
+
+
+def test_cli_baselines_writes_results(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    data, out = tmp_path / "g.npz", tmp_path / "baselines.json"
+    main(["collect", "--episodes", "4", "--max-steps", "40", "--out", str(data)])
+    capsys.readouterr()
+    main(
+        [
+            "baselines",
+            "--data",
+            str(data),
+            "--env",
+            "gridworld",
+            "--k",
+            "3",
+            "5",
+            "--tasks",
+            "8",
+            "--achievement",
+            "collect_item",
+            "--resets",
+            "4",
+            "--budget",
+            "30",
+            "--out",
+            str(out),
+        ]
+    )
+    res = json.loads(out.read_text())
+    assert set(res["reach"]) == {"k=3", "k=5"}
+    for k in ("k=3", "k=5"):
+        assert set(res["reach"][k]) == {"random", "still", "replay"}
+        assert res["reach"][k]["replay"]["success_rate"] == 1.0
+        assert res["reach"][k]["still"]["success_rate"] == 0.0  # trivial tasks (goal == start) are skipped
+    assert set(res["achievement"]["collect_item"]) == {"random", "still"}
+    assert res["config"]["tasks"] == 8 and "commit" in res
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["reach"]["k=3"]["replay"] == 1.0

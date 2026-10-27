@@ -43,8 +43,9 @@ actions rejected; Craftax wrapper checked when the extra is installed.
 
 ### `data.craftax_batch` — many games at once (phase 1, built)
 `collect_craftax_batch(name, seeds, max_steps, policy=None, chunk=100)`:
-one game per seed, stepped together with `jax.vmap` inside a jitted
-`lax.scan`; frames move to the host as uint8 every `chunk` steps. Same key
+one game per seed, each world built by its own reset (Craftax's batched
+reset depends on the batch size), then stepped together with `jax.vmap`
+inside a jitted `lax.scan`; frames move to the host as uint8 every `chunk` steps. Same key
 schedule as `CraftaxEnv`, so every episode replays there from (seed,
 actions): the same game, frames equal up to 1/255 (batched rendering can
 round a shaded pixel differently). `random_batch_policy(n)`,
@@ -117,7 +118,23 @@ Tests: collect then train end to end on the grid world.
 
 ## Planned
 
-### Phase 1: `policies` and evaluation
+### `evaluation` — tasks, baselines, scoring (phase 1, built)
+- `ReachTask(seed, start, prefix, goal_actions)`, `make_reach_tasks(episodes,
+  k, n, seed, env=None)`: family A from recorded episodes; with `env`,
+  trivial tasks (goal state = start state) are skipped.
+- `AchievementTask(achievement, seed, budget)`: family B.
+- `GameEnv.state_key()`: what "goal reached" means (Craftax: position,
+  facing, 12 inventory counts; GridWorld: position).
+- Agents: `Agent` protocol (`reset(goal_frames)`, `act(frame)`),
+  `RandomAgent`, `StillAgent`, `ReplayAgent` (recorded actions, open loop).
+- `evaluate_reach`, `evaluate_achievement` → JSON-ready dicts (success
+  rate, per task successes and steps); `run_baselines` / `jga baselines`
+  writes all baselines with the config and git commit.
+- Tests: replay reaches 100% (GridWorld and real Craftax), still wins only
+  trivial tasks (and none once they're skipped), random is reproducible,
+  a scripted walker unlocks the grid achievement.
+
+### Phase 1 (still to build): `policies`
 - `policies.PPOPolicy`: load a Craftax PPO checkpoint for data collection.
 - `evaluation.tasks`: named tasks with a start, a goal and a step budget
   (`reach_tree`, `collect_wood`, `place_table`, `make_wood_pickaxe`,

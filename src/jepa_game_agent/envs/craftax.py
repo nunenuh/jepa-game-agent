@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import numpy as np
@@ -49,6 +50,12 @@ class CraftaxEnv:
         flags = {k.split("/", 1)[1]: float(v) for k, v in info.items() if k.startswith("Achievements/")}
         unlocked = tuple(k for k, v in flags.items() if v > 0)
         return StepResult(self._to_frame(obs), float(reward), bool(done), flags, unlocked)
+
+    def state_key(self) -> tuple[int, ...]:
+        """Player position, facing direction and the 12 inventory counts."""
+        st = self._state
+        inv = [int(getattr(st.inventory, f.name)) for f in dataclasses.fields(st.inventory)]
+        return (*(int(x) for x in np.asarray(st.player_position)), int(st.player_direction), *inv)
 
     @property
     def state(self) -> Any:

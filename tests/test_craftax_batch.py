@@ -86,3 +86,25 @@ def test_cli_collects_craftax_in_batches(tmp_path, capsys) -> None:
     assert card["transitions"] == sum(len(e) for e in eps)
     assert [e.seed for e in eps] == [0, 1, 2]
     assert set(card["achievements"]) == {a for e in eps for a in e.achievements}
+
+
+def test_craftax_reach_tasks_replay_to_100_percent(batch) -> None:
+    from jepa_game_agent.evaluation import ReplayAgent, evaluate_reach, make_reach_tasks
+
+    env = CraftaxEnv(NAME)
+    env.reset(0)
+    assert len(env.state_key()) == 2 + 1 + 12  # position, facing, 12 inventory counts
+    tasks = make_reach_tasks(batch, k=5, n=6, seed=0)
+    res = evaluate_reach(lambda: env, tasks, lambda task: ReplayAgent(task.goal_actions))
+    assert res["success_rate"] == 1.0
+
+
+def test_large_batches_replay_too() -> None:
+    """Craftax's reset under vmap depends on the batch size (seed 1021 gets another world in a batch of 32),
+    so the collector must build each world on its own. Every episode of a 32-game batch must replay."""
+    seeds = list(range(1000, 1032))
+    eps = collect_craftax_batch(NAME, seeds=seeds, max_steps=20, chunk=20)
+    env = CraftaxEnv(NAME)
+    for e in eps:
+        frames = [env.reset(e.seed)] + [env.step(int(a)).frame for a in e.actions]
+        assert np.abs(np.stack(frames).astype(int) - e.frames.astype(int)).max() <= 1, f"seed {e.seed}"

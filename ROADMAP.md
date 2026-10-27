@@ -19,7 +19,9 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] Vectorised Craftax collector (`jax.vmap`), replay-exact; `jga collect` prints a data card
 - [x] Fixed: Craftax auto-reset planted a new world at every episode end
 - [ ] ~1M Craftax-Classic transitions (random + PPO policy), data card
-- [ ] Evaluation tasks and random / PPO baselines
+- [x] Evaluation tasks (reach K steps, achievements), random / still / replay baselines, `jga baselines`
+- [x] Fixed: Craftax's batched reset gave some seeds a different world (replay broke); trivial reach tasks skipped
+- [ ] PPO data policy on Colab, then baselines on PPO data
 
 ## Phase 2: flat JEPA world model
 

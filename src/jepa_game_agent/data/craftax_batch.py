@@ -76,7 +76,11 @@ def collect_craftax_batch(
     keys = jax.vmap(jax.random.PRNGKey)(jnp.asarray(seeds))
     pair = split(keys)
     keys, subs = pair[:, 0], pair[:, 1]
-    obs, states = jax.vmap(env.reset, in_axes=(0, None))(subs, params)
+    # One reset per game, then stack: Craftax's world generation under vmap depends on the batch size
+    # (the same seed can get a different world in a batch of 32), which would break replay.
+    reset = jax.jit(env.reset)
+    worlds = [reset(subs[i], params) for i in range(len(seeds))]
+    obs, states = jax.tree.map(lambda *xs: jnp.stack(xs), *worlds)
 
     def one_step(carry: Any, _: Any) -> Any:
         keys, states, obs, pkey = carry

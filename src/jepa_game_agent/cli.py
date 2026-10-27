@@ -1,4 +1,4 @@
-"""Command line: `jga collect` (record episodes) and `jga train` (train the world model)."""
+"""Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`."""
 
 from __future__ import annotations
 
@@ -56,6 +56,19 @@ def _train(args: argparse.Namespace) -> None:
     print(json.dumps({"steps": history[-1]["step"] if history else 0, "last": history[-1] if history else None}))
 
 
+def _baselines(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation.baselines import run_baselines, summary
+
+    env = make_env(args.env, seed=args.seed)
+    results = run_baselines(
+        env, load_episodes(args.data), args.k, args.tasks, args.achievement, args.resets, args.budget, args.seed
+    )
+    results["config"] |= {"env": args.env, "data": str(args.data)}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(results, indent=1))
+    print(json.dumps(summary(results)))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -76,6 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--checkpoint", type=Path, default=None)
     t.add_argument("--checkpoint-every", type=int, default=500)
     t.set_defaults(func=_train)
+    b = sub.add_parser("baselines", help="score random / still / replay baselines on a dataset's tasks")
+    b.add_argument("--data", type=Path, required=True, help="episodes to draw reach tasks from (test split)")
+    b.add_argument("--env", default="gridworld")
+    b.add_argument("--k", type=int, nargs="+", default=[5, 10, 20], help="goal offsets for reach tasks")
+    b.add_argument("--tasks", type=int, default=100, help="reach tasks per k")
+    b.add_argument("--achievement", nargs="*", default=[], help="achievement names for family B")
+    b.add_argument("--resets", type=int, default=50, help="fresh resets per achievement")
+    b.add_argument("--budget", type=int, default=200, help="steps allowed per achievement task")
+    b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--out", type=Path, required=True)
+    b.set_defaults(func=_baselines)
     return p
 
 

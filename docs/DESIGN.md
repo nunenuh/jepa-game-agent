@@ -21,6 +21,11 @@ facts they rest on. Phases 3–5 are designed when they start.
   `CraftaxEnv` reproduces every frame exactly (checked over a 59-step
   episode). Any start state can be rebuilt from (seed, actions so far);
   datasets don't need to store states.
+- **Caveat found in phase 1:** Craftax's reset under `jax.vmap` depends on
+  the batch size: in a batch of 32, some seeds (1008, 1021, 1024, ...) get a
+  different world than when reset alone. The batch collector therefore
+  builds each world with its own reset and only steps the games together;
+  every episode of a 32-game batch then replays exactly (tested).
 - **No trained policy is released** (Craftax_Baselines ships code only).
 - A random policy dies early (the check episode ended after 59 steps) and
   rarely gets past COLLECT_WOOD.
@@ -65,6 +70,11 @@ frame at step t + K of the same episode. Budget: 2K steps. K = 5, 10, 20.
 Success: the player's position, direction and inventory equal the goal
 state's at any step within the budget. 100 starts per K, same starts for
 every agent.
+**Trivial tasks are skipped** (added in phase 1): a first run on random-play
+data found that standing still won 57% of K = 5 tasks, because many random
+actions change nothing that counts (walking into a wall, crafting without
+materials). Tasks whose goal state equals their start state are dropped;
+standing still now scores 0%.
 - Baselines: random actions; stand still (NOOP); **replay the episode's own
   K actions** (upper bound, as in 09).
 
