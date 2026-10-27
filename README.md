@@ -24,6 +24,18 @@ This repo adds one piece per failure:
 | Memory | a memory bank / map of past latents |
 | Own goals | curiosity from surprise + goals from the user or an LLM |
 
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-it-works-dark.svg">
+  <img alt="Step 1: a PPO player records Craftax games. Step 2: the JEPA world model learns from the recordings and plans toward a goal picture by imagining futures. Step 3 (optional): a fast policy trained inside the JEPA's imagination for real-time play." src="docs/assets/how-it-works-light.svg">
+</picture>
+
+PPO only records training games. The JEPA agent learns how the world works
+from those recordings (no score, no PPO) and plans by imagining futures. RL
+comes back only if planning is too slow, to train a fast policy inside the
+JEPA's imagination. (Diagram source: `docs/diagrams/how_it_works.py`.)
+
 The world: [Craftax](https://github.com/MichaelTMatthews/Craftax), a 2D
 Minecraft-like game written in JAX: fast enough to generate millions of
 frames on one GPU, rich enough to need long plans (wood → table → pickaxe →

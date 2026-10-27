@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 910 545" width="910" height="545">
+  <rect x="0" y="0" width="910" height="545" rx="12" fill="#0d1117"/>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#c3c2b7"/></marker>
+    <marker id="ahv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#9085e9"/></marker>
+    <marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff6b6a"/></marker>
+  </defs>
+  <style>
+    text { fill: #f0efec; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .box { fill: #161b22; stroke: #3d444d; stroke-width: 1.5; }
+    .learn { stroke: #3987e5; } .frozen { stroke: #9a9890; stroke-dasharray: 4 3; } .loss { stroke: #e0622f; }
+    .bad { stroke: #ff6b6a; } .good { stroke: #3fd29b; }
+    .m { font-size: 13px; font-weight: 600; }
+    .h { font-size: 14px; font-weight: 700; }
+    .s { font-size: 11.5px; fill: #c3c2b7; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .c { font-size: 11px; fill: #9a9890; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .v { fill: #9085e9; } .r { fill: #ff6b6a; } .g { fill: #3fd29b; } .y { fill: #f0b429; }
+    .a { stroke: #c3c2b7; stroke-width: 1.5; fill: none; marker-end: url(#ah); }
+    .ar { stroke: #ff6b6a; stroke-width: 1.5; fill: none; marker-end: url(#ahr); }
+    .ema { stroke: #9085e9; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; marker-end: url(#ahv); }
+  </style>
+  <g transform="translate(6,8)">
+  <text class="h" x="4" y="14" text-anchor="start">Step 1 · phase 1 · PPO's only job: record training games</text>
+  <rect class="box good" x="4" y="30" width="260" height="70" rx="8"/>
+  <text class="m" x="134.0" y="55" text-anchor="middle">PPO player</text>
+  <text class="s" x="134.0" y="72" text-anchor="middle">learns from the game score</text>
+  <text class="c" x="134.0" y="88" text-anchor="middle">200M steps on Colab A100</text>
+  <rect class="box " x="320" y="30" width="250" height="70" rx="8"/>
+  <text class="m" x="445.0" y="55" text-anchor="middle">Plays Craftax</text>
+  <text class="s" x="445.0" y="72" text-anchor="middle">wood, table, pickaxe, iron ...</text>
+  <rect class="box " x="626" y="30" width="274" height="70" rx="8"/>
+  <text class="m" x="763.0" y="55" text-anchor="middle">Recorded games</text>
+  <text class="s" x="763.0" y="72" text-anchor="middle">~1M frames + moves</text>
+  <text class="c" x="763.0" y="88" text-anchor="middle">no score kept</text>
+  <path class="a" d="M264,65 H318"/>
+  <path class="a" d="M570,65 H624"/>
+  <text class="c" x="4" y="122" text-anchor="start">Like hiring a skilled gamer to record gameplay videos. After this, PPO is not used again.</text>
+  <path class="a" d="M763,102 V168"/>
+  <text class="c" x="772" y="140" text-anchor="start">only frames + moves go on</text>
+  <text class="h" x="4" y="162" text-anchor="start">Step 2 · phase 2 · the JEPA agent (the real project)</text>
+  <rect class="box learn" x="4" y="178" width="380" height="70" rx="8"/>
+  <text class="m" x="194.0" y="203" text-anchor="middle">JEPA world model learns</text>
+  <text class="s" x="194.0" y="220" text-anchor="middle">how the game reacts to each move</text>
+  <text class="c" x="194.0" y="236" text-anchor="middle">from the recordings · no score, no PPO</text>
+  <rect class="box " x="626" y="178" width="274" height="70" rx="8"/>
+  <text class="m" x="763.0" y="203" text-anchor="middle">Recorded games</text>
+  <text class="s" x="763.0" y="220" text-anchor="middle">"I pressed this, then saw that"</text>
+  <path class="a" d="M624,213 H386"/>
+  <rect class="box frozen" x="4" y="270" width="260" height="70" rx="8"/>
+  <text class="m" x="134.0" y="295" text-anchor="middle">Goal picture</text>
+  <text class="s" x="134.0" y="312" text-anchor="middle">"have a pickaxe"</text>
+  <rect class="box learn" x="320" y="270" width="250" height="70" rx="8"/>
+  <text class="m" x="445.0" y="295" text-anchor="middle">JEPA imagines</text>
+  <text class="s" x="445.0" y="312" text-anchor="middle">futures of candidate moves</text>
+  <text class="c" x="445.0" y="328" text-anchor="middle">inside its own model</text>
+  <rect class="box learn" x="626" y="270" width="274" height="70" rx="8"/>
+  <text class="m" x="763.0" y="295" text-anchor="middle">Picks the best moves</text>
+  <text class="s" x="763.0" y="312" text-anchor="middle">and plays them in the game</text>
+  <text class="c" x="763.0" y="328" text-anchor="middle">planning, not RL</text>
+  <path class="a" d="M264,305 H318"/>
+  <path class="a" d="M570,305 H624"/>
+  <path class="a" d="M360,250 V268"/>
+  <path class="a" d="M445,342 V408"/>
+  <text class="c" x="454" y="380" text-anchor="start">only if planning is too slow (~1 s per move)</text>
+  <text class="h" x="4" y="402" text-anchor="start">Step 3 · phase 5 · optional speed-up</text>
+  <rect class="box learn" x="4" y="418" width="260" height="76" rx="8"/>
+  <text class="m" x="134.0" y="443" text-anchor="middle">JEPA's imagination</text>
+  <text class="s" x="134.0" y="460" text-anchor="middle">a fake game inside</text>
+  <text class="c" x="134.0" y="476" text-anchor="middle">the world model</text>
+  <rect class="box frozen" x="320" y="418" width="250" height="76" rx="8"/>
+  <text class="m" x="445.0" y="443" text-anchor="middle">Small fast policy</text>
+  <text class="s" x="445.0" y="460" text-anchor="middle">copies the planner, or RL</text>
+  <text class="c" x="445.0" y="476" text-anchor="middle">(PPO / Dreamer) inside imagination</text>
+  <rect class="box " x="626" y="418" width="274" height="76" rx="8"/>
+  <text class="m" x="763.0" y="443" text-anchor="middle">Real-time play</text>
+  <text class="s" x="763.0" y="460" text-anchor="middle">instant moves</text>
+  <path class="a" d="M264,456 H318"/>
+  <path class="a" d="M570,456 H624"/>
+  <text class="c" x="4" y="528" text-anchor="start">PPO made the training data  ·  JEPA understands the game and plans  ·  RL again only later, only for speed</text>
+  </g>
+</svg>
