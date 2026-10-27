@@ -1,8 +1,14 @@
 __pycache__/
 .ipynb_checkpoints/
 .venv/
-data/
-checkpoints/
+/data/
+/checkpoints/
 *.h5
 *.ckpt
 *.pt
+.coverage
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+*.npz

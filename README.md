@@ -29,7 +29,43 @@ Minecraft-like game written in JAX: fast enough to generate millions of
 frames on one GPU, rich enough to need long plans (wood → table → pickaxe →
 stone → ...).
 
-Status: **planning**. See [ROADMAP.md](ROADMAP.md).
+Status: **foundation built, phase 0 (design note) next.** The plan:
+[docs/PLAN.md](docs/PLAN.md) · what each part does: [docs/SPECS.md](docs/SPECS.md)
+· progress: [ROADMAP.md](ROADMAP.md).
+
+## Code
+
+```
+src/jepa_game_agent/
+  config.py        validated settings (model, training, planner)
+  envs/            GameEnv interface · GridWorld (tests, CPU) · CraftaxEnv (JAX, optional)
+  data/            collect, save/load episodes, training windows
+  models/          Encoder · causal action-conditioned Predictor · SIGReg · WorldModel
+  planning/        categorical CEM · plan_to_goal over imagined latents
+  memory/          LatentMemory: remember latents, find them again
+  surprise.py      SurpriseMeter: "that can't happen" scores
+  training/        resumable training loop (Colab sessions end)
+  cli.py           jga collect / jga train
+tests/             unit tests, CPU-only, seconds
+```
+
+## Quick start
+
+```bash
+uv venv --python 3.11
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+uv pip install -e ".[dev]"                 # ".[dev,craftax]" for the real game
+uv run --no-sync pytest                    # all unit tests, ~99% coverage
+
+# the whole pipeline on the built-in grid world, on a CPU
+uv run --no-sync jga collect --episodes 20 --out data/grid.npz
+uv run --no-sync jga train --data data/grid.npz --num-actions 5 --steps 200 --checkpoint checkpoints/grid.pt
+
+# real Craftax frames
+uv run --no-sync jga collect --env Craftax-Classic-Pixels-v1 --episodes 2 --max-steps 500 --out data/craftax.npz
+```
+
+Development rules and checks: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Hardware
 

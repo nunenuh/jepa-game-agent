@@ -1,41 +1,43 @@
 # Roadmap
 
-Each phase ends with something you can run and a number that says whether it
-worked, including when it didn't.
+Progress tracker. The full plan, with measures and risks: [docs/PLAN.md](docs/PLAN.md).
+Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 
-## 0. Design note (next)
+## Foundation (done)
 
-Pick the exact Craftax version (Classic or full), the observation (pixels or
-symbolic), and the success measures (achievements unlocked, steps to a goal,
-surprise on impossible events). Check what LeWM / H-JEPA code can be reused
-from jepa-playground 09 and stable-worldmodel. Approve before any training.
+- [x] Package `src/jepa_game_agent`: envs (GridWorld, Craftax), data, world model, CEM planner, memory, surprise, resumable training, CLI
+- [x] 31 unit tests on CPU (~99% coverage), Craftax wrapper tested against the real game
+- [x] ruff, mypy --strict, pytest with coverage gate; CI on Python 3.10 and 3.12; pre-commit
 
-## 1. Data and a baseline
+## Phase 0: design note (next)
 
-- Generate Craftax episodes on Colab (random + a simple scripted or PPO policy)
-- Baselines: random actions, and a standard RL agent's achievements (from the Craftax paper)
+- [ ] `docs/DESIGN.md`: observation, goal format, evaluation tasks and baselines, what to reuse from jepa-playground 09
+- [ ] Approved before any training
 
-## 2. A flat JEPA world model (LeWM) on Craftax
+## Phase 1: data and baselines
 
-- Train LeWM on Colab A100 (a few hours)
-- Plan short goals ("get wood") with CEM, as in jepa-playground 09
-- Measure: success on short goals; surprise on impossible events (teleport, items appearing)
+- [ ] Vectorised Craftax collector (`jax.vmap`)
+- [ ] ~1M Craftax-Classic transitions (random + PPO policy), data card
+- [ ] Evaluation tasks and random / PPO baselines
 
-## 3. Hierarchy (H-JEPA)
+## Phase 2: flat JEPA world model
 
-- 2–3 levels, each predicting farther ahead (about a day of Colab, in resumable chunks)
-- Measure: long goals ("make a stone pickaxe") flat vs hierarchical
+- [ ] Train on Colab A100 (resumable)
+- [ ] Short-goal planning vs random
+- [ ] Probes (position, inventory, health) and surprise on impossible events
 
-## 4. Memory and its own goals
+## Phase 3: hierarchy
 
-- Memory bank of past latents (where was the water, the table)
-- Curiosity: go where surprise is high; goals from the user or an LLM turned into goal latents
+- [ ] 2–3 level world model, top-down planning
+- [ ] Long goals: flat vs hierarchical
+- [ ] Optional: LLM breaks goals into achievement subgoals
 
-## 5. Speed and a live window
+## Phase 4: memory and its own goals
 
-- A fast policy trained in the JEPA's imagination, so it acts in real time
-- Live window on the laptop: watch it play, give it goals, mess with its world
+- [ ] Memory in the agent loop; return-to-place
+- [ ] Curiosity from surprise; goals from user / LLM
 
-## Not realistic here
+## Phase 5: speed and a live window
 
-Minecraft-scale 3D worlds, V-JEPA 2 / RoboJEPA-scale models: beyond Colab.
+- [ ] Fast policy trained in imagination
+- [ ] Live laptop window: watch, give goals, teleport, see surprise
