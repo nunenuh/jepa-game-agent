@@ -14,13 +14,20 @@ import numpy as np
 
 from jepa_game_agent.data.episodes import Episode
 
-BatchPolicy = Callable[[Any, Any], Any]  # (frames (N, H, W, C) float in [0, 1], jax key) -> actions (N,) int32
+BatchPolicy = Callable[[Any, Any, Any], Any]  # (frames (N, H, W, C) in [0, 1], game states, jax key) -> actions (N,)
+
+
+def craftax_num_actions(name: str) -> int:
+    from craftax.craftax_env import make_craftax_env_from_name
+
+    env = make_craftax_env_from_name(name, auto_reset=False)
+    return int(env.action_space(env.default_params).n)
 
 
 def random_batch_policy(num_actions: int) -> BatchPolicy:
     import jax
 
-    def policy(frames: Any, key: Any) -> Any:
+    def policy(frames: Any, states: Any, key: Any) -> Any:
         return jax.random.randint(key, (frames.shape[0],), 0, num_actions)
 
     return policy
@@ -33,9 +40,9 @@ def with_epsilon(policy: BatchPolicy, epsilon: float, num_actions: int) -> Batch
     import jax
     import jax.numpy as jnp
 
-    def noisy(frames: Any, key: Any) -> Any:
+    def noisy(frames: Any, states: Any, key: Any) -> Any:
         k_policy, k_coin, k_rand = jax.random.split(key, 3)
-        actions = policy(frames, k_policy)
+        actions = policy(frames, states, k_policy)
         coin = jax.random.uniform(k_coin, actions.shape) < epsilon
         return jnp.where(coin, jax.random.randint(k_rand, actions.shape, 0, num_actions), actions)
 
@@ -85,7 +92,7 @@ def collect_craftax_batch(
     def one_step(carry: Any, _: Any) -> Any:
         keys, states, obs, pkey = carry
         pkey, akey = jax.random.split(pkey)
-        actions = policy(obs, akey).astype(jnp.int32)
+        actions = policy(obs, states, akey).astype(jnp.int32)
         pair = split(keys)
         keys, subs = pair[:, 0], pair[:, 1]
         obs, states, rewards, dones, _info = jax.vmap(env.step, in_axes=(0, 0, 0, None))(subs, states, actions, params)

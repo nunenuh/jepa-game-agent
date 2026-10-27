@@ -134,8 +134,20 @@ Tests: collect then train end to end on the grid world.
   trivial tasks (and none once they're skipped), random is reproducible,
   a scripted walker unlocks the grid achievement.
 
-### Phase 1 (still to build): `policies`
-- `policies.PPOPolicy`: load a Craftax PPO checkpoint for data collection.
+### `policies.mlp` — the PPO data player (phase 1, built)
+Craftax_Baselines' PPO (MIT, pinned commit) trained on the **symbolic**
+observation by `experiments/phase1_train_ppo.py`; its actor (an MLP: three
+tanh layers + logits) exported to a plain `.npz` with `save_actor_params`.
+`load_mlp_policy(path, name)` returns a `BatchPolicy` that reads the
+symbolic view of the batched game states (`symbolic_obs_fn`) and samples
+an action; the dataset records the pixels of the same states.
+`BatchPolicy` now takes `(frames, states, key)`. `jga collect --policy
+ppo.npz --epsilon 0.2` collects with it. Tests: only actor layers saved,
+logits match a NumPy reference, symbolic obs from pixel states, collection
+reproducible, CLI end to end; the driver was smoke-tested with real
+(tiny) PPO training on CPU, and its export played through `jga collect`.
+
+### Phase 1 (still to build): evaluation leftovers
 - `evaluation.tasks`: named tasks with a start, a goal and a step budget
   (`reach_tree`, `collect_wood`, `place_table`, `make_wood_pickaxe`,
   `collect_stone`, ...), each judged by Craftax achievement flags or

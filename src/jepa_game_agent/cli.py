@@ -25,16 +25,28 @@ from jepa_game_agent.training.trainer import train
 
 def _collect(args: argparse.Namespace) -> None:
     seeds = [args.seed + i for i in range(args.episodes)]
+    extra: dict[str, object] = {}
     if args.env.startswith("Craftax"):  # many games at once on the GPU
-        from jepa_game_agent.data.craftax_batch import collect_craftax_batch
+        from jepa_game_agent.data.craftax_batch import collect_craftax_batch, craftax_num_actions, with_epsilon
 
-        episodes, collector = collect_craftax_batch(args.env, seeds, args.max_steps), "batch"
+        batch_policy = None
+        if args.policy is not None:
+            from jepa_game_agent.policies.mlp import load_mlp_policy
+
+            batch_policy = load_mlp_policy(args.policy, args.env)
+            if args.epsilon > 0:
+                batch_policy = with_epsilon(batch_policy, args.epsilon, craftax_num_actions(args.env))
+            extra = {"policy": str(args.policy), "epsilon": args.epsilon}
+        elif args.epsilon:
+            raise SystemExit("--epsilon needs --policy")
+        episodes = collect_craftax_batch(args.env, seeds, args.max_steps, policy=batch_policy)
+        collector = "batch"
     else:
         env = make_env(args.env, seed=args.seed)
         policy = random_policy(env.num_actions)
         episodes, collector = [collect_episode(env, policy, args.max_steps, seed=s) for s in seeds], "single"
     save_episodes(args.out, episodes)
-    print(json.dumps({**data_card(episodes), "env": args.env, "collector": collector, "out": str(args.out)}))
+    print(json.dumps({**data_card(episodes), "env": args.env, "collector": collector, **extra, "out": str(args.out)}))
 
 
 def _train(args: argparse.Namespace) -> None:
@@ -77,6 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--episodes", type=int, default=10)
     c.add_argument("--max-steps", type=int, default=100)
     c.add_argument("--seed", type=int, default=0)
+    c.add_argument("--policy", type=Path, default=None, help="exported PPO weights (.npz); default: random")
+    c.add_argument("--epsilon", type=float, default=0.0, help="share of actions replaced by random ones")
     c.add_argument("--out", type=Path, required=True)
     c.set_defaults(func=_collect)
     t = sub.add_parser("train", help="train the world model on recorded episodes")

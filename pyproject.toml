@@ -60,4 +60,5 @@ markers = ["craftax: needs the optional craftax extra (skipped when it isn't ins
 omit = [  # need the craftax extra: tested in the craftax CI job
     "src/jepa_game_agent/envs/craftax.py",
     "src/jepa_game_agent/data/craftax_batch.py",
+    "src/jepa_game_agent/policies/mlp.py",
 ]

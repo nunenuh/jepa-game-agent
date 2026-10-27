@@ -53,12 +53,12 @@ def test_with_epsilon_mixes_in_random_actions() -> None:
 
     from jepa_game_agent.data.craftax_batch import with_epsilon
 
-    always_zero = lambda frames, key: jnp.zeros(frames.shape[0], dtype=jnp.int32)  # noqa: E731
+    always_zero = lambda frames, states, key: jnp.zeros(frames.shape[0], dtype=jnp.int32)  # noqa: E731
     frames = jnp.zeros((4000, 1, 1, 3))
-    acts = np.asarray(with_epsilon(always_zero, 0.2, 17)(frames, jax.random.PRNGKey(0)))
+    acts = np.asarray(with_epsilon(always_zero, 0.2, 17)(frames, None, jax.random.PRNGKey(0)))
     changed = (acts != 0).mean()
     assert 0.15 < changed < 0.22  # 20% replaced, 1/17 of those land on 0 again
-    assert (np.asarray(with_epsilon(always_zero, 0.0, 17)(frames, jax.random.PRNGKey(0))) == 0).all()
+    assert (np.asarray(with_epsilon(always_zero, 0.0, 17)(frames, None, jax.random.PRNGKey(0))) == 0).all()
     with pytest.raises(ValueError):
         with_epsilon(always_zero, 1.5, 17)
 

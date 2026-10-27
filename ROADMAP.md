@@ -21,7 +21,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [ ] ~1M Craftax-Classic transitions (random + PPO policy), data card
 - [x] Evaluation tasks (reach K steps, achievements), random / still / replay baselines, `jga baselines`
 - [x] Fixed: Craftax's batched reset gave some seeds a different world (replay broke); trivial reach tasks skipped
-- [ ] PPO data policy on Colab, then baselines on PPO data
+- [x] PPO player code: Craftax_Baselines driver + `.npz` export + `jga collect --policy --epsilon` (smoke-tested locally)
+- [ ] Train PPO on Colab A100, collect ~1M transitions, data card, baselines on PPO data
 
 ## Phase 2: flat JEPA world model
 
