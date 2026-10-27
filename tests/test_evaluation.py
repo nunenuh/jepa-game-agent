@@ -97,3 +97,22 @@ def test_reach_tasks_can_skip_trivial_goals(episodes: list[Episode]) -> None:
     res = evaluate_reach(make_env, tasks, lambda task: StillAgent())
     assert res["success_rate"] == 0.0
     assert all(s != g for s, g in zip(res["start_keys"], res["goal_keys"], strict=True))
+
+
+def test_reach_tasks_skip_goals_past_the_end_of_the_game() -> None:
+    """A goal the replayed game can't reach alive (it ends first) is unusable: even replay would fail it."""
+    from jepa_game_agent.data.episodes import collect_episode, random_policy
+    from jepa_game_agent.evaluation.tasks import ReachTask, usable
+
+    env = make_env()  # ends after max_steps=200
+    ep = collect_episode(env, random_policy(5), max_steps=200, seed=7)
+    acts = ep.actions.tolist()
+    inside = ReachTask(7, 190, tuple(acts[:190]), tuple(acts[190:195]))
+    past_end = ReachTask(7, 198, tuple(acts[:198]), (*acts[198:200], 2, 2, 2))
+    assert usable(env, past_end) is False
+    assert usable(env, inside) == (
+        evaluate_reach(make_env, [inside], lambda t: StillAgent())["start_keys"][0]
+        != evaluate_reach(make_env, [inside], lambda t: StillAgent())["goal_keys"][0]
+    )
+    res = evaluate_reach(make_env, [past_end], lambda task: ReplayAgent(task.goal_actions))
+    assert res["success_rate"] == 0.0  # why such tasks must be skipped

@@ -73,42 +73,50 @@ def _stepper(env: Any, params: Any) -> Any:
     return masked
 
 
-def _replay(env: Any, params: Any, keys: Any, states: Any, actions: list[tuple[int, ...]]) -> tuple[Any, Any]:
-    """Advance game i by actions[i] (ragged), all together."""
+def _replay(env: Any, params: Any, keys: Any, states: Any, actions: list[tuple[int, ...]]) -> tuple[Any, Any, Any, Any]:
+    """Advance game i by actions[i] (ragged), all together. Also returns per game: ended before its last
+    action (early), and ended at all (early or on the last action)."""
     import jax
     import jax.numpy as jnp
 
+    n = len(actions)
     longest = max((len(a) for a in actions), default=0)
     if longest == 0:
-        return keys, states
-    padded = np.full((len(actions), longest), NOOP, dtype=np.int32)
+        return keys, states, jnp.zeros(n, bool), jnp.zeros(n, bool)
+    padded = np.full((n, longest), NOOP, dtype=np.int32)
     lengths = np.asarray([len(a) for a in actions])
     for i, a in enumerate(actions):
         padded[i, : len(a)] = a
     step = _stepper(env, params)
+    lens = jnp.asarray(lengths)
 
     def body(carry: Any, t: Any) -> Any:
-        keys, states = carry
-        keys, states, _ = step(keys, states, jnp.asarray(padded)[:, t], t < jnp.asarray(lengths))
-        return (keys, states), None
+        keys, states, early, ended = carry
+        keys, states, dones = step(keys, states, jnp.asarray(padded)[:, t], t < lens)
+        return (keys, states, early | (dones & (t < lens - 1)), ended | dones), None
 
-    (keys, states), _ = jax.lax.scan(body, (keys, states), jnp.arange(longest))
-    return keys, states
+    init = (keys, states, jnp.zeros(n, bool), jnp.zeros(n, bool))
+    (keys, states, early, ended), _ = jax.lax.scan(body, init, jnp.arange(longest))
+    return keys, states, early, ended
 
 
-def _start_and_goal(name: str, tasks: Sequence[ReachTask]) -> tuple[Any, Any, Any, Any, Any]:
+def _start_and_goal(name: str, tasks: Sequence[ReachTask]) -> tuple[Any, Any, Any, Any, Any, Any]:
+    """Env, params, (keys, states) at the start, start keys, goal keys, and per task whether it is usable
+    (game alive through the prefix, not ended before the goal step)."""
     env, params = _env(name)
     keys, states = _reset(env, params, [t.seed for t in tasks])
-    keys, states = _replay(env, params, keys, states, [t.prefix for t in tasks])
+    keys, states, _, ended_in_prefix = _replay(env, params, keys, states, [t.prefix for t in tasks])
     start_keys = _state_keys(states)
-    _, goal_states = _replay(env, params, keys, states, [t.goal_actions for t in tasks])
-    return env, params, (keys, states), start_keys, _state_keys(goal_states)
+    _, goal_states, early_goal, _ = _replay(env, params, keys, states, [t.goal_actions for t in tasks])
+    alive = ~ended_in_prefix & ~early_goal
+    return env, params, (keys, states), start_keys, _state_keys(goal_states), alive
 
 
-def nontrivial(name: str, tasks: Sequence[ReachTask]) -> list[bool]:
-    """For each task: does reaching the goal require changing the state key at all?"""
-    _, _, _, start, goal = _start_and_goal(name, tasks)
-    return [bool(x) for x in np.asarray((start != goal).any(-1))]
+def usable(name: str, tasks: Sequence[ReachTask]) -> list[bool]:
+    """For each task: does the goal differ from the start, and does the replayed game stay alive until the
+    goal step? (Both evaluators stop when a game ends, so a goal past the end is unreachable.)"""
+    _, _, _, start, goal, alive = _start_and_goal(name, tasks)
+    return [bool(x) for x in np.asarray((start != goal).any(-1) & alive)]
 
 
 def _play(
@@ -161,7 +169,7 @@ def batch_reach(
     if len(ks) != 1:
         raise ValueError("all tasks must share one goal offset k")
     k = ks.pop()
-    env, params, (keys, states), start, goal = _start_and_goal(name, tasks)
+    env, params, (keys, states), start, goal, _ = _start_and_goal(name, tasks)
     scripted = np.asarray([t.goal_actions for t in tasks], dtype=np.int32) if agent == "replay" else None
     hit = _play(
         env,
@@ -236,14 +244,17 @@ def run_baselines_batch(
     budget: int = 200,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """`baselines.run_baselines` for Craftax, every task at once. Trivial reach tasks are skipped."""
+    """`baselines.run_baselines` for Craftax, every task at once.
+
+    Unusable reach tasks (trivial, or past the end of the replayed game) are skipped.
+    """
     from jepa_game_agent.evaluation.baselines import git_commit
     from jepa_game_agent.evaluation.tasks import make_reach_tasks
 
     reach: dict[str, dict[str, Any]] = {}
     for k in ks:
         candidates = make_reach_tasks(episodes, k=k, n=4 * tasks, seed=seed)
-        keep = nontrivial(name, candidates)
+        keep = usable(name, candidates)
         chosen = [t for t, ok in zip(candidates, keep, strict=True) if ok][:tasks]
         reach[f"k={k}"] = {agent: batch_reach(name, chosen, agent, seed=seed) for agent in AGENTS}
     ach: dict[str, dict[str, Any]] = {}

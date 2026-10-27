@@ -38,8 +38,8 @@ def make_reach_tasks(
 ) -> list[ReachTask]:
     """n tasks with goal offset k, starts drawn uniformly over every valid (episode, step); deterministic.
 
-    With `env`, each candidate is replayed and dropped if its goal state equals its start state (nothing to
-    do, so standing still would win); candidates are drawn until n remain or none are left.
+    With `env`, each candidate is replayed and dropped unless `usable` (goal differs from start, and the
+    replayed game doesn't end before the goal); candidates are drawn until n remain or none are left.
     """
     if k < 1 or n < 1:
         raise ValueError("k and n must be >= 1")
@@ -52,18 +52,22 @@ def make_reach_tasks(
         i, t = valid[p]
         acts = episodes[i].actions.tolist()
         task = ReachTask(episodes[i].seed, t, tuple(acts[:t]), tuple(acts[t : t + k]))
-        if env is None or not _is_trivial(env, task):
+        if env is None or usable(env, task):
             tasks.append(task)
         if len(tasks) == n:
             break
     return sorted(tasks, key=lambda x: (x.seed, x.start))
 
 
-def _is_trivial(env: GameEnv, task: ReachTask) -> bool:
+def usable(env: GameEnv, task: ReachTask) -> bool:
+    """Can the task be scored? Its goal must differ from its start, and the replayed game must not end
+    before the goal step (the evaluators stop at the end of a game, so such a goal is unreachable)."""
     env.reset(task.seed)
     for a in task.prefix:
-        env.step(a)
+        if env.step(a).done:
+            return False
     start = env.state_key()
-    for a in task.goal_actions:
-        env.step(a)
-    return env.state_key() == start
+    for i, a in enumerate(task.goal_actions):
+        if env.step(a).done and i < len(task.goal_actions) - 1:
+            return False
+    return env.state_key() != start

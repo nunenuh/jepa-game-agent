@@ -13,7 +13,7 @@ from jepa_game_agent.evaluation import (
     evaluate_reach,
     make_reach_tasks,
 )
-from jepa_game_agent.evaluation.craftax_batch_eval import batch_achievement, batch_reach, nontrivial
+from jepa_game_agent.evaluation.craftax_batch_eval import batch_achievement, batch_reach, usable
 
 pytestmark = pytest.mark.craftax
 NAME = "Craftax-Classic-Pixels-v1"
@@ -55,9 +55,9 @@ def test_random_is_reproducible(tasks) -> None:
         batch_reach(NAME, tasks, agent="dance")
 
 
-def test_nontrivial_matches_the_state_keys(tasks, single) -> None:
+def test_usable_matches_the_state_keys(tasks, single) -> None:
     expected = [s != g for s, g in zip(single["still"]["start_keys"], single["still"]["goal_keys"], strict=True)]
-    assert nontrivial(NAME, tasks) == expected
+    assert usable(NAME, tasks) == expected
     assert not all(expected) and any(expected)  # the fixture has both kinds
 
 
@@ -107,3 +107,19 @@ def test_cli_baselines_uses_the_batch_evaluator_for_craftax(tmp_path, capsys) ->
     assert r["still"]["success_rate"] == 0.0  # trivial tasks skipped by the batched check
     assert res["achievement"]["collect_wood"]["still"]["evaluator"] == "batch"
     assert res["config"]["evaluator"] == "batch"
+
+
+def test_usable_skips_tasks_the_replayed_player_doesnt_survive() -> None:
+    """Both evaluators stop when a game ends, so a task is unusable if the replayed player is dead at the
+    start (found on Colab: GPU-collected games drift from their replays and die earlier) or dies before
+    the goal step."""
+    from jepa_game_agent.evaluation import ReachTask
+
+    ep = collect_craftax_batch(NAME, seeds=[3], max_steps=2000, chunk=500)[0]  # random player: dies
+    acts = ep.actions.tolist()
+    n = len(acts)
+    starts_dead = ReachTask(3, n, tuple(acts), (2, 3, 2, 3, 2))
+    dies_on_the_way = ReachTask(3, n - 2, tuple(acts[: n - 2]), (*acts[n - 2 :], 2, 3, 2))
+    starts_dead_one_step = ReachTask(3, n, tuple(acts), (1,))  # only the "dead at the start" rule catches k=1
+    flags = usable(NAME, [starts_dead, dies_on_the_way, starts_dead_one_step])
+    assert flags == [False, False, False]
