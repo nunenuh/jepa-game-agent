@@ -71,10 +71,24 @@ def _train(args: argparse.Namespace) -> None:
 def _baselines(args: argparse.Namespace) -> None:
     from jepa_game_agent.evaluation.baselines import run_baselines, summary
 
-    env = make_env(args.env, seed=args.seed)
-    results = run_baselines(
-        env, load_episodes(args.data), args.k, args.tasks, args.achievement, args.resets, args.budget, args.seed
-    )
+    if args.env.startswith("Craftax"):  # every task at once on the GPU
+        from jepa_game_agent.evaluation.craftax_batch_eval import run_baselines_batch
+
+        results = run_baselines_batch(
+            args.env,
+            load_episodes(args.data),
+            args.k,
+            args.tasks,
+            args.achievement,
+            args.resets,
+            args.budget,
+            args.seed,
+        )
+    else:
+        env = make_env(args.env, seed=args.seed)
+        results = run_baselines(
+            env, load_episodes(args.data), args.k, args.tasks, args.achievement, args.resets, args.budget, args.seed
+        )
     results["config"] |= {"env": args.env, "data": str(args.data)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(results, indent=1))

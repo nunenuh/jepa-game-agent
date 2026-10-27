@@ -147,19 +147,69 @@ logits match a NumPy reference, symbolic obs from pixel states, collection
 reproducible, CLI end to end; the driver was smoke-tested with real
 (tiny) PPO training on CPU, and its export played through `jga collect`.
 
-### Phase 1 (still to build): evaluation leftovers
-- `evaluation.tasks`: named tasks with a start, a goal and a step budget
-  (`reach_tree`, `collect_wood`, `place_table`, `make_wood_pickaxe`,
-  `collect_stone`, ...), each judged by Craftax achievement flags or
-  positions, not by latent distance.
-- `evaluation.run(agent, tasks, episodes, seed) -> results dict` written to
-  JSON. Every task reports a random-action baseline.
+### Phase 1 (still to build): batched Craftax evaluator & standard metrics
+- `evaluation.craftax_batch_eval`:
+  - `batch_reach(name, tasks, agent, budget_factor=2, seed=0)`: replays all
+    task prefixes in parallel (each world built with its own reset so the
+    batch-size quirk never alters a map, then stepped together with
+    `jax.vmap`), checks `(position, facing, inventory)` against the goal at
+    every step, and agrees 100% with the one-game evaluator.
+  - `nontrivial(name, tasks) -> list[bool]`: batched check that `start_key !=
+    goal_key`.
+  - `batch_achievement(name, tasks, agent, seed=0)`: batched rollout from
+    fresh resets for achievement tasks.
+- `evaluation.metrics` (international benchmark standards):
+  1. **Crafter / Craftax Shifted Geometric Mean Score** (Hafner, ICLR 2022;
+     Matthews et al., ICML 2024; DreamerV3, Nature 2025):
+     $$S = \exp\!\left(\frac{1}{N} \sum_{i=1}^{N} \ln(1 + s_i)\right) - 1, \quad s_i \in [0, 100]$$
+     over all $N = 22$ Craftax-Classic achievements (percentage of evaluation
+     episodes unlocking achievement $i$ at least once).
+  2. **Reach Success Rate (`SR@K`) and `SPL` (Success weighted by Path
+     Length)** (LeWM 2025; H-JEPA 2026; Anderson et al. 2018):
+     $$\text{SPL} = \frac{1}{M} \sum_{j=1}^{M} S_j \frac{K_j}{\max(L_j, K_j)}$$
+     where $S_j \in \{0, 1\}$ is whether task $j$ succeeded, $K_j =
+     |\text{goal\_actions}|$ is the reference horizon, and $L_j$ is `steps_to_success`.
+     Bounded between `StillAgent` (0% on nontrivial tasks) and `ReplayAgent`
+     (100%).
+  3. **Success–Compute Frontier** (H-JEPA, Zhang et al. 2026): task success
+     rate as a function of planner world-model forward passes (tokens / FLOPs)
+     and wall-clock latency (ms/step), comparing flat CEM (Phase 2),
+     hierarchical CEM (Phase 3), and the amortized fast policy (Phase 5).
+  4. **Statistical Reporting (`rliable` protocol)** (Agarwal et al., NeurIPS
+     2021): Interquartile Mean (**IQM**) and **95% stratified bootstrap
+     confidence intervals** across seeds/episodes, avoiding outlier-sensitive
+     plain means.
 
-### Phase 2: probes and impossible events
-- `evaluation.probes`: linear / MLP probes from latents to player position,
-  inventory counts, health (R² on held-out episodes).
-- `evaluation.impossible`: teleport, item appears, item vanishes; surprise
-  AUC vs normal steps.
+### Phase 2: representation & world-model diagnostics (LeWM / PLDM / IntPhys 2)
+- `evaluation.probes` (I-JEPA / LeWM / PLDM standard):
+  - Frozen linear and 2-layer MLP probes trained on held-out episodes to
+    predict ground-truth state: 12 inventory counts ($R^2$, Pearson $r$),
+    4 vitals (`health`, `food`, `drink`, `energy` — $R^2$), facing direction
+    (macro-F1), and light level ($R^2$).
+  - **Negative control:** global map `(x, y)` from a single egocentric frame
+    must stay near chance ($R^2 \approx 0$) until `LatentMemory` is attached
+    in Phase 4.
+  - **Inverse-dynamics probe / auxiliary head** (H-JEPA DROID protocol):
+    predict action $a_t$ from $(z_t, z_{t+1})$ (top-1 accuracy across 17
+    actions) to verify the latent captures fine HUD and tile interactions.
+- `evaluation.dynamics` (PLDM / LeJEPA / LeWM standard):
+  - **Open-Loop Multi-Step Retrieval (`Recall@1`, `Recall@5`, `MRR`) & Cosine
+    Similarity** at horizons $H \in \{1, 5, 10, 20\}$: rank predicted latent
+    $\hat{z}_{t+H}$ against true $z_{t+H}$ in a pool of $M = 1{,}000$ held-out
+    distractor latents (scale-invariant, cannot be gamed by shrinking norms).
+  - **Temporal Latent Straightening** (PLDM, Sobal et al. 2025; LeWM 2025):
+    mean cosine similarity between consecutive latent velocities
+    $\cos(z_{t+1} - z_t,\, z_t - z_{t-1})$.
+  - **Effective Rank (`erank`) & SIGReg Normality Statistic** (Roy & Vetterli
+    2007; Balestriero & LeCun, LeJEPA 2025): Shannon entropy of normalized
+    singular values $\exp(-\sum_i p_i \ln p_i)$ plus Epps–Pulley test to
+    certify zero dimensional collapse.
+- `evaluation.impossible` (LeWM / Meta IntPhys 2 / V-JEPA 2 standard):
+  - Matched pairs of normal vs. `state.replace`-corrupted transitions (player
+    teleported 3–5 tiles, inventory item vanishes/appears, adjacent tree turns
+    to grass, instant day-to-night flip).
+  - Scored by **ROC-AUC** and **FPR@95%TPR** of per-step prediction error
+    $\|\hat{z}_{t+1} - z_{t+1}\|_2^2$ and `SurpriseMeter` z-scores.
 
 ### Phase 3: `hierarchy`
 - `HierarchicalWorldModel(levels)`: level k predicts `stride_k` steps
