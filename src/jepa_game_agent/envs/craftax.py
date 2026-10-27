@@ -14,6 +14,11 @@ class CraftaxEnv:
 
     Pixel names only: `Craftax-Classic-Pixels-v1` (63x63x3, 17 actions) or `Craftax-Pixels-v1`
     (130x110x3, 43 actions). Frames come back as uint8 to keep datasets small.
+
+    No auto-reset: Craftax's auto-reset swaps in a new world on the step the player dies, so the
+    episode's last frame would show a different world. After `done`, call `reset`. The key schedule
+    (split once per reset and per step) is shared with `data.craftax_batch`, so episodes collected
+    there replay here exactly.
     """
 
     def __init__(self, name: str, seed: int = 0) -> None:
@@ -23,7 +28,7 @@ class CraftaxEnv:
         from craftax.craftax_env import make_craftax_env_from_name
 
         self._jax = jax
-        self._env = make_craftax_env_from_name(name, auto_reset=True)
+        self._env = make_craftax_env_from_name(name, auto_reset=False)
         self._params = self._env.default_params
         self.num_actions = int(self._env.action_space(self._params).n)
         self._key = jax.random.PRNGKey(seed)
@@ -41,8 +46,19 @@ class CraftaxEnv:
     def step(self, action: int) -> StepResult:
         self._key, sub = self._jax.random.split(self._key)
         obs, self._state, reward, done, info = self._step(sub, self._state, action, self._params)
-        achievements = {k.split("/", 1)[1]: float(v) for k, v in info.items() if k.startswith("Achievements/")}
-        return StepResult(self._to_frame(obs), float(reward), bool(done), achievements)
+        flags = {k.split("/", 1)[1]: float(v) for k, v in info.items() if k.startswith("Achievements/")}
+        unlocked = tuple(k for k, v in flags.items() if v > 0)
+        return StepResult(self._to_frame(obs), float(reward), bool(done), flags, unlocked)
+
+    @property
+    def state(self) -> Any:
+        """The full Craftax state (map, player, inventory, ...), e.g. to stage impossible events."""
+        return self._state
+
+    def set_state(self, state: Any) -> Frame:
+        """Replace the state (for example `env.state.replace(player_position=...)`) and return its frame."""
+        self._state = state
+        return self._to_frame(self._env.get_obs(state))
 
     @staticmethod
     def _to_frame(obs: Any) -> Frame:

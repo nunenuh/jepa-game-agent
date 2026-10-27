@@ -45,3 +45,22 @@ def test_window_dataset(episodes: list[Episode]) -> None:
     assert torch.equal(actions, torch.from_numpy(episodes[0].actions[:5]))
     with pytest.raises(ValueError):
         WindowDataset(episodes, window=31)
+
+
+def test_episode_keeps_seed_and_achievements(tmp_path: Path) -> None:
+    e = Episode(
+        np.zeros((3, 4, 4, 3), np.uint8),
+        np.zeros(2, np.int64),
+        np.zeros(2, np.float32),
+        seed=7,
+        achievements=("collect_wood", "place_table"),
+    )
+    path = tmp_path / "eps.npz"
+    save_episodes(path, [e, Episode(e.frames, e.actions, e.rewards)])
+    a, b = load_episodes(path)
+    assert a.seed == 7 and a.achievements == ("collect_wood", "place_table")
+    assert b.seed == -1 and b.achievements == ()
+
+
+def test_collect_episode_records_seed(episodes: list[Episode]) -> None:
+    assert [e.seed for e in episodes] == [0, 1, 2, 3]

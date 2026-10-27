@@ -12,11 +12,12 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 ## Phase 0: design note (next)
 
 - [x] [`docs/DESIGN.md`](docs/DESIGN.md) drafted: observation, goal format, evaluation tasks and baselines, what to reuse from jepa-playground 09
-- [ ] Approved before any training
+- [x] Approved (2026-10-27): own PPO data policy, goals K = 5/10/20, status bar kept
 
 ## Phase 1: data and baselines
 
-- [ ] Vectorised Craftax collector (`jax.vmap`)
+- [x] Vectorised Craftax collector (`jax.vmap`), replay-exact; `jga collect` prints a data card
+- [x] Fixed: Craftax auto-reset planted a new world at every episode end
 - [ ] ~1M Craftax-Classic transitions (random + PPO policy), data card
 - [ ] Evaluation tasks and random / PPO baselines
 

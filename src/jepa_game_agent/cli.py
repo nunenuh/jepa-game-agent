@@ -13,6 +13,7 @@ from jepa_game_agent.config import ModelConfig, TrainConfig
 from jepa_game_agent.data.episodes import (
     WindowDataset,
     collect_episode,
+    data_card,
     load_episodes,
     random_policy,
     save_episodes,
@@ -23,22 +24,17 @@ from jepa_game_agent.training.trainer import train
 
 
 def _collect(args: argparse.Namespace) -> None:
-    env = make_env(args.env, seed=args.seed)
-    episodes = [
-        collect_episode(env, random_policy(env.num_actions), args.max_steps, seed=args.seed + i)
-        for i in range(args.episodes)
-    ]
+    seeds = [args.seed + i for i in range(args.episodes)]
+    if args.env.startswith("Craftax"):  # many games at once on the GPU
+        from jepa_game_agent.data.craftax_batch import collect_craftax_batch
+
+        episodes, collector = collect_craftax_batch(args.env, seeds, args.max_steps), "batch"
+    else:
+        env = make_env(args.env, seed=args.seed)
+        policy = random_policy(env.num_actions)
+        episodes, collector = [collect_episode(env, policy, args.max_steps, seed=s) for s in seeds], "single"
     save_episodes(args.out, episodes)
-    print(
-        json.dumps(
-            {
-                "episodes": len(episodes),
-                "transitions": sum(len(e) for e in episodes),
-                "num_actions": env.num_actions,
-                "out": str(args.out),
-            }
-        )
-    )
+    print(json.dumps({**data_card(episodes), "env": args.env, "collector": collector, "out": str(args.out)}))
 
 
 def _train(args: argparse.Namespace) -> None:

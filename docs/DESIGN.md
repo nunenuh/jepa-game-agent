@@ -1,6 +1,6 @@
 # Design note (phase 0)
 
-Status: **draft, waiting for approval.** Decisions for phases 1–2, with the
+Status: **approved 2026-10-27** (all three open questions: yes). Decisions for phases 1–2, with the
 facts they rest on. Phases 3–5 are designed when they start.
 
 ## Facts checked (craftax 1.6.1, Craftax-Classic-Pixels-v1)
@@ -43,7 +43,7 @@ predictor takes one action per step (an embedding of the 17 actions).
   A100). Collect with it at ε = 0.2 (20% random actions, for variety), plus
   10% of episodes fully random.
 - ~1M transitions; split **by episode** 90 / 5 / 5 (train / val / test).
-- Store the reset seed with each episode (`Episode.seed`, to add) so any
+- Store the reset seed with each episode (`Episode.seed`, done) so any
   step can be replayed.
 - Needs the vectorised collector (many games at once with `jax.vmap`)
   first; the one-game `CraftaxEnv` stays for evaluation and play.

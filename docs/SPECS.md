@@ -31,15 +31,33 @@ seed)`. Frozen dataclasses; invalid values raise `ValueError` on creation.
   `set_agent` to teleport). For tests and CPU debugging.
 - `CraftaxEnv`: Craftax pixel envs through JAX (optional extra
   `[craftax]`); frames converted to uint8; `info` holds the 22 (Classic)
-  achievement flags.
+  achievement flags, `StepResult.achievements` the unlocked ones. **No
+  auto-reset**: Craftax's auto-reset swaps in a new world on the step the
+  player dies (found by a test: the game clock read 0 after death), which
+  would plant a fake "teleport" at every episode end. `state` / `set_state`
+  expose the full game state, to stage impossible events.
 - `make_env(name)`: `"gridworld"` or a Craftax pixel env name.
 
 Tests: determinism, frame shape and dtype, walls, reward, episode end, bad
 actions rejected; Craftax wrapper checked when the extra is installed.
 
+### `data.craftax_batch` — many games at once (phase 1, built)
+`collect_craftax_batch(name, seeds, max_steps, policy=None, chunk=100)`:
+one game per seed, stepped together with `jax.vmap` inside a jitted
+`lax.scan`; frames move to the host as uint8 every `chunk` steps. Same key
+schedule as `CraftaxEnv`, so every episode replays there from (seed,
+actions): the same game, frames equal up to 1/255 (batched rendering can
+round a shaded pixel differently). `random_batch_policy(n)`,
+`with_epsilon(policy, epsilon, n)` (random action with probability ε).
+Tests (craftax marker, own CI job): shapes, replay equivalence, ε rate,
+CLI end to end.
+
 ### `data` — episodes
 `collect_episode(env, policy, max_steps, seed)`, `random_policy(n)`,
-`save_episodes`, `load_episodes`, `WindowDataset(episodes, window)`.
+`save_episodes`, `load_episodes`, `WindowDataset(episodes, window)`,
+`data_card(episodes)` (size, length stats, achievement counts). Each
+`Episode` keeps its reset `seed` and the `achievements` it unlocked, in
+order.
 Tests: shapes, validation, save/load round trip, windows never cross
 episodes.
 
@@ -100,9 +118,6 @@ Tests: collect then train end to end on the grid world.
 ## Planned
 
 ### Phase 1: `policies` and evaluation
-- `data.collect_craftax_batch`: many Craftax games stepped together with
-  `jax.vmap` (the one-game `CraftaxEnv` is too slow for ~1M transitions),
-  writing the same episode format.
 - `policies.PPOPolicy`: load a Craftax PPO checkpoint for data collection.
 - `evaluation.tasks`: named tasks with a start, a goal and a step budget
   (`reach_tree`, `collect_wood`, `place_table`, `make_wood_pickaxe`,

@@ -27,3 +27,16 @@ jobs:
         run: uv run --no-sync mypy
       - name: Test
         run: uv run --no-sync pytest
+
+  craftax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install (CPU JAX + Craftax)
+        run: |
+          uv venv --python 3.11
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install -e ".[dev,craftax]"
+      - name: Craftax tests
+        run: uv run --no-sync pytest -m craftax --no-cov

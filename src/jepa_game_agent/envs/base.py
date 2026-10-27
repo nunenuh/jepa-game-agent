@@ -17,6 +17,7 @@ class StepResult:
     reward: float
     done: bool
     info: dict[str, float] = field(default_factory=dict)
+    achievements: tuple[str, ...] = ()  # achievements the game reports as unlocked after this step
 
 
 class GameEnv(Protocol):

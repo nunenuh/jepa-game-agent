@@ -53,3 +53,10 @@ def test_cli_collect_then_train(tmp_path: Path, capsys: pytest.CaptureFixture[st
         ]
     )
     assert json.loads(capsys.readouterr().out)["steps"] == 4 and ckpt.exists()
+
+
+def test_cli_collect_reports_a_data_card(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    main(["collect", "--episodes", "2", "--max-steps", "10", "--out", str(tmp_path / "g.npz")])
+    card = json.loads(capsys.readouterr().out)
+    assert card["collector"] == "single" and card["achievements"] == {}
+    assert card["length"] == {"min": 10, "mean": 10.0, "max": 10}

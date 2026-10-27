@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,8 @@ class Episode:
     frames: NDArray[np.uint8]  # (T+1, H, W, C): the frame before each action, plus the last one
     actions: NDArray[np.int64]  # (T,)
     rewards: NDArray[np.float32]  # (T,)
+    seed: int = -1  # reset seed: replaying it with the same actions rebuilds every frame (-1: unknown)
+    achievements: tuple[str, ...] = ()  # unlocked during the episode, in order
 
     def __post_init__(self) -> None:
         if self.frames.ndim != 4 or self.frames.dtype != np.uint8:
@@ -41,16 +44,40 @@ def collect_episode(env: GameEnv, policy: Policy, max_steps: int, seed: int) -> 
     if max_steps < 1:
         raise ValueError("max_steps must be >= 1")
     rng = np.random.default_rng(seed)
-    frames, actions, rewards = [env.reset(seed)], [], []
+    frames, actions, rewards, unlocked = [env.reset(seed)], [], [], []
     for _ in range(max_steps):
         action = policy(frames[-1], rng)
         result = env.step(action)
         frames.append(result.frame)
         actions.append(action)
         rewards.append(result.reward)
+        unlocked += [a for a in result.achievements if a not in unlocked]
         if result.done:
             break
-    return Episode(np.stack(frames), np.asarray(actions, dtype=np.int64), np.asarray(rewards, dtype=np.float32))
+    return Episode(
+        np.stack(frames),
+        np.asarray(actions, dtype=np.int64),
+        np.asarray(rewards, dtype=np.float32),
+        seed=seed,
+        achievements=tuple(unlocked),
+    )
+
+
+def data_card(episodes: Sequence[Episode]) -> dict[str, object]:
+    """Summary for a dataset: size, episode lengths, how many episodes unlocked each achievement."""
+    if not episodes:
+        raise ValueError("no episodes")
+    lengths = [len(e) for e in episodes]
+    counts: dict[str, int] = {}
+    for e in episodes:
+        for a in e.achievements:
+            counts[a] = counts.get(a, 0) + 1
+    return {
+        "episodes": len(episodes),
+        "transitions": sum(lengths),
+        "length": {"min": min(lengths), "mean": round(sum(lengths) / len(lengths), 1), "max": max(lengths)},
+        "achievements": dict(sorted(counts.items(), key=lambda kv: -kv[1])),
+    }
 
 
 def save_episodes(path: str | Path, episodes: Sequence[Episode]) -> None:
@@ -64,15 +91,28 @@ def save_episodes(path: str | Path, episodes: Sequence[Episode]) -> None:
         actions=np.concatenate([e.actions for e in episodes]),
         rewards=np.concatenate([e.rewards for e in episodes]),
         lengths=np.asarray([len(e) for e in episodes], dtype=np.int64),
+        seeds=np.asarray([e.seed for e in episodes], dtype=np.int64),
+        achievements=np.asarray([json.dumps(list(e.achievements)) for e in episodes]),
     )
 
 
 def load_episodes(path: str | Path) -> list[Episode]:
     with np.load(path) as d:
         frames, actions, rewards, lengths = d["frames"], d["actions"], d["rewards"], d["lengths"]
+        seeds = d["seeds"] if "seeds" in d else np.full(len(lengths), -1)
+        achievements = [tuple(json.loads(a)) for a in d["achievements"]] if "achievements" in d else None
     out, f0, a0 = [], 0, 0
-    for n in lengths.tolist():
-        out.append(Episode(frames[f0 : f0 + n + 1], actions[a0 : a0 + n], rewards[a0 : a0 + n]))
+    for i, n in enumerate(lengths.tolist()):
+        ach = achievements[i] if achievements is not None else ()
+        out.append(
+            Episode(
+                frames[f0 : f0 + n + 1],
+                actions[a0 : a0 + n],
+                rewards[a0 : a0 + n],
+                seed=int(seeds[i]),
+                achievements=ach,
+            )
+        )
         f0, a0 = f0 + n + 1, a0 + n
     return out
 
