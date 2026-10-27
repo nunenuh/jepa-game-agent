@@ -11,7 +11,7 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 
 ## Phase 0: design note (next)
 
-- [ ] `docs/DESIGN.md`: observation, goal format, evaluation tasks and baselines, what to reuse from jepa-playground 09
+- [x] [`docs/DESIGN.md`](docs/DESIGN.md) drafted: observation, goal format, evaluation tasks and baselines, what to reuse from jepa-playground 09
 - [ ] Approved before any training
 
 ## Phase 1: data and baselines
