@@ -41,7 +41,7 @@ Minecraft-like game written in JAX: fast enough to generate millions of
 frames on one GPU, rich enough to need long plans (wood → table → pickaxe →
 stone → ...).
 
-Status: **foundation built, phase 0 (design note) next.** The plan:
+Status: **phase 1 done (data, PPO player, [baselines](experiments/results/README.md)); phase 2 (train the JEPA world model) next.** The plan:
 [docs/PLAN.md](docs/PLAN.md) · what each part does: [docs/SPECS.md](docs/SPECS.md)
 · progress: [ROADMAP.md](ROADMAP.md).
 

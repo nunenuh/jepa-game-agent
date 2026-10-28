@@ -9,22 +9,22 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] 31 unit tests on CPU (~99% coverage), Craftax wrapper tested against the real game
 - [x] ruff, mypy --strict, pytest with coverage gate; CI on Python 3.10 and 3.12; pre-commit
 
-## Phase 0: design note (next)
+## Phase 0: design note (done)
 
 - [x] [`docs/DESIGN.md`](docs/DESIGN.md) drafted: observation, goal format, evaluation tasks and baselines, what to reuse from jepa-playground 09
 - [x] Approved (2026-10-27): own PPO data policy, goals K = 5/10/20, status bar kept
 
-## Phase 1: data and baselines
+## Phase 1: data and baselines (done)
 
 - [x] Vectorised Craftax collector (`jax.vmap`), replay-exact; `jga collect` prints a data card
 - [x] Fixed: Craftax auto-reset planted a new world at every episode end
-- [ ] ~1M Craftax-Classic transitions (random + PPO policy), data card
+- [x] ~1M Craftax-Classic transitions (PPO 901k + random 147k), data card
 - [x] Evaluation tasks (reach K steps, achievements), random / still / replay baselines, `jga baselines`
 - [x] Fixed: Craftax's batched reset gave some seeds a different world (replay broke); trivial reach tasks skipped
 - [x] PPO player code: Craftax_Baselines driver + `.npz` export + `jga collect --policy --epsilon` (smoke-tested locally)
-- [ ] Train PPO on Colab A100, collect ~1M transitions, data card, baselines on PPO data
+- [x] Train PPO on Colab A100, collect ~1M transitions, data card, baselines on PPO data ([results](experiments/results/README.md): replay 100%, random 4-5%, still 0%)
 
-## Phase 2: flat JEPA world model & 2026 architecture considerations
+## Phase 2: flat JEPA world model & 2026 architecture considerations (next)
 
 - [ ] Train baseline 1-vector LeWM on Colab A100 (resumable)
 - [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
