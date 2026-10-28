@@ -17,6 +17,7 @@ from jepa_game_agent.data.episodes import (
     load_episodes,
     random_policy,
     save_episodes,
+    split_of,
 )
 from jepa_game_agent.envs import make_env
 from jepa_game_agent.models.world_model import WorldModel
@@ -50,7 +51,9 @@ def _collect(args: argparse.Namespace) -> None:
 
 
 def _train(args: argparse.Namespace) -> None:
-    episodes = load_episodes(args.data)
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
     data = WindowDataset(episodes, args.window)
     model = WorldModel(
         ModelConfig(
@@ -65,7 +68,17 @@ def _train(args: argparse.Namespace) -> None:
     )
     device = "cuda" if torch.cuda.is_available() else "cpu"
     history = train(model, data, cfg, checkpoint=args.checkpoint, device=device)
-    print(json.dumps({"steps": history[-1]["step"] if history else 0, "last": history[-1] if history else None}))
+    print(
+        json.dumps(
+            {
+                "split": args.split,
+                "episodes": len(episodes),
+                "transitions": sum(len(e) for e in episodes),
+                "steps": history[-1]["step"] if history else 0,
+                "last": history[-1] if history else None,
+            }
+        )
+    )
 
 
 def _baselines(args: argparse.Namespace) -> None:
@@ -108,7 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--out", type=Path, required=True)
     c.set_defaults(func=_collect)
     t = sub.add_parser("train", help="train the world model on recorded episodes")
-    t.add_argument("--data", type=Path, required=True)
+    t.add_argument("--data", type=Path, nargs="+", required=True, help="one or more episode files (shards)")
+    t.add_argument("--split", choices=("all", "train", "val", "test"), default="all", help="keep one split (by seed)")
     t.add_argument("--num-actions", type=int, required=True)
     t.add_argument("--latent-dim", type=int, default=128)
     t.add_argument("--window", type=int, default=8)

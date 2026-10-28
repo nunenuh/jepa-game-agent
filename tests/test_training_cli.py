@@ -98,3 +98,16 @@ def test_cli_baselines_writes_results(tmp_path: Path, capsys: pytest.CaptureFixt
     assert res["config"]["tasks"] == 8 and "commit" in res
     summary = json.loads(capsys.readouterr().out)
     assert summary["reach"]["k=3"]["replay"] == 1.0
+
+
+def test_cli_train_reads_many_files_and_keeps_one_split(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    a, b = tmp_path / "a.npz", tmp_path / "b.npz"
+    main(["collect", "--episodes", "2", "--max-steps", "10", "--seed", "0", "--out", str(a)])  # seeds 0 (test), 1 (val)
+    main(["collect", "--episodes", "2", "--max-steps", "10", "--seed", "2", "--out", str(b)])  # seeds 2, 3 (train)
+    capsys.readouterr()
+    args = ["train", "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1", "--batch-size", "4"]
+    main([*args, "--data", str(a), str(b), "--split", "train"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["episodes"] == 2 and out["transitions"] == 20 and out["split"] == "train"
+    main([*args, "--data", str(a), str(b)])  # default: every episode
+    assert json.loads(capsys.readouterr().out)["episodes"] == 4

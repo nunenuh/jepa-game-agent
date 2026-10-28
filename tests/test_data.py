@@ -64,3 +64,11 @@ def test_episode_keeps_seed_and_achievements(tmp_path: Path) -> None:
 
 def test_collect_episode_records_seed(episodes: list[Episode]) -> None:
     assert [e.seed for e in episodes] == [0, 1, 2, 3]
+
+
+def test_split_of_follows_the_seed_rule() -> None:
+    from jepa_game_agent.data.episodes import split_of
+
+    assert [split_of(s) for s in (0, 1, 2, 19, 20, 21, 40)] == ["test", "val", "train", "train", "test", "val", "test"]
+    with pytest.raises(ValueError):
+        split_of(-1)  # unknown seed: can't place it

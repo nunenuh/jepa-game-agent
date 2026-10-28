@@ -35,6 +35,16 @@ class Episode:
         return len(self.actions)
 
 
+SPLITS = ("train", "val", "test")
+
+
+def split_of(seed: int) -> str:
+    """Split by episode, from its reset seed: seed % 20 == 0 is test, == 1 is val, the rest train (90/5/5)."""
+    if seed < 0:
+        raise ValueError("episode has no seed, can't assign a split")
+    return {0: "test", 1: "val"}.get(seed % 20, "train")
+
+
 def random_policy(num_actions: int) -> Policy:
     return lambda _frame, rng: int(rng.integers(num_actions))
 
