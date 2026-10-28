@@ -26,7 +26,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 
 ## Phase 2: flat JEPA world model & 2026 architecture considerations (next)
 
-- [ ] Train baseline 1-vector LeWM on Colab A100 (resumable)
+- [x] Train baseline 1-vector LeWM on Colab A100 (resumable): 30k steps, ~35 min
+- [x] JEPA planning agent + `jga plan`: reach K=5 33% / K=10 12% / K=20 7% vs random 4/4/5% ([results](experiments/results/README.md))
 - [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
 - [ ] Probes (inventory, vitals, facing, negative-control map `xy`), open-loop `Recall@1`, and surprise ROC-AUC on impossible events
 - [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**

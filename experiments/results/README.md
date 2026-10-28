@@ -27,3 +27,24 @@ Achievements (50 fresh worlds, 200 steps):
 - collect_stone: random 0%, still 0%
 
 Phase 2 target: the JEPA planner clearly above random at K = 5 and 10.
+
+## Phase 2, first world model: planning on the same reach tasks
+
+Model: flat LeWM (`latent_dim` 128, window 8), 30k steps × batch 128 on the PPO train split
+(941,767 transitions, 3,454 episodes), ~35 min on a Colab A100. Final loss 0.83 (prediction 0.11,
+SIGReg 8.0). Planner: categorical CEM, horizon 8, 256 samples, 32 elites, 6 iterations, replanning
+every step, cost = distance to the goal latent summed over the imagined path. Code at 07e667f.
+
+```
+jga plan --checkpoint wm.pt --data test.npz --env Craftax-Classic-Pixels-v1 --k 5 10 20 --tasks 100
+```
+
+Reach success (same 100 tasks per K as the baselines above):
+
+- K = 5: JEPA 33%, random 4%, replay 100%
+- K = 10: JEPA 12%, random 4%, replay 100%
+- K = 20: JEPA 7%, random 5%, replay 100%
+
+Clearly above random at K = 5 (8×), 3× at K = 10, no real gain at K = 20. The median success takes
+only 3–4 steps at every K, so the planner mostly wins tasks whose goal ended up close to the start;
+longer routes are not solved yet. Reference from jepa-playground 09 (simpler world): 74% vs 2%.
