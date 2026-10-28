@@ -48,3 +48,25 @@ Reach success (same 100 tasks per K as the baselines above):
 Clearly above random at K = 5 (8×), 3× at K = 10, no real gain at K = 20. The median success takes
 only 3–4 steps at every K, so the planner mostly wins tasks whose goal ended up close to the start;
 longer routes are not solved yet. Reference from jepa-playground 09 (simpler world): 74% vs 2%.
+
+### Planner sweep (same model, K = 5 / 10)
+
+- horizon 8, 256 samples (default): 33% / 12%
+- horizon 16: 29% / 11%
+- 1024 samples, 64 elites, 8 iterations: 33% / 13%
+- both: 26% / 13%
+
+A bigger planner doesn't help: the world model is the bottleneck.
+
+### Linear probes (`jga probe`, 50 random-play episodes × 300 steps, unseen seeds, 1 in 5 held out)
+
+R² of each state field read linearly off the latent:
+
+- facing direction: -0.41 (not encoded; every Craftax action hits the faced tile, and reach goals need it)
+- wood: 0.45
+- position x / y: 0.35 / -0.24 (expected low: the view is egocentric; the design's negative control)
+- sapling: -0.43 (rarely collected, noisy)
+- stone, coal, iron, diamond, tools: no score (never collected in the held-out random games)
+
+Likely cause: the encoder pools the 63×63 frame to 4×4, washing out the small player sprite. Next:
+inverse-dynamics loss (turning changes only the facing), retrain, probe and plan again.
