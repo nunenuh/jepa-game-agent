@@ -70,3 +70,19 @@ R² of each state field read linearly off the latent:
 
 Likely cause: the encoder pools the 63×63 frame to 4×4, washing out the small player sprite. Next:
 inverse-dynamics loss (turning changes only the facing), retrain, probe and plan again.
+
+## Phase 2B step 1: inverse-dynamics loss (`--inverse-weight 0.5`), same data and settings
+
+Training (30k steps): prediction 0.091 (v1 0.107), SIGReg 6.7 (v1 7.8), inverse-dynamics CE 1.08
+(chance over 17 actions: 2.83). Code at 6c9148e.
+
+Probes (same protocol), v1 → v2: facing -0.41 → **0.60**, wood 0.45 → 0.59, sapling -0.43 → 0.53,
+position x / y 0.35 / -0.24 → 0.28 / -0.05 (negative control, stays low).
+
+Reach (same 100 tasks per K, default planner), v1 → v2:
+
+- K = 5: 33% → 32% (random 4%)
+- K = 10: 12% → **25%** (random 4%)
+- K = 20: 7% → 9% (random 5%)
+
+Knowing the facing doubles medium-range success; long goals (K = 20) still need phase 3 (hierarchy).

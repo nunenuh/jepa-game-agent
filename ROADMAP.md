@@ -29,9 +29,10 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] Train baseline 1-vector LeWM on Colab A100 (resumable): 30k steps, ~35 min
 - [x] JEPA planning agent + `jga plan`: reach K=5 33% / K=10 12% / K=20 7% vs random 4/4/5% ([results](experiments/results/README.md))
 - [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
-- [ ] Probes (inventory, vitals, facing, negative-control map `xy`), open-loop `Recall@1`, and surprise ROC-AUC on impossible events
+- [x] Linear probes (`jga probe`): facing, inventory, negative-control map `xy`
+- [ ] Probes for vitals, open-loop `Recall@1`, and surprise ROC-AUC on impossible events
 - [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**
-  - [ ] Inverse-dynamics auxiliary loss $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
+  - [x] Inverse-dynamics auxiliary loss (facing R² -0.41 → 0.60; K=10 12% → 25%) $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
   - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
