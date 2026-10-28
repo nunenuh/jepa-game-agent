@@ -1,5 +1,6 @@
 """Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`,
-`jga plan` (score a trained world model's planner), `jga probe` (what the latent knows)."""
+`jga plan` (score a trained world model's planner), `jga probe` (what the latent knows),
+`jga surprise` (does it notice impossible jumps)."""
 
 from __future__ import annotations
 
@@ -152,6 +153,21 @@ def _probe(args: argparse.Namespace) -> None:
     print(json.dumps(res["r2"]))
 
 
+def _surprise(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation.baselines import git_commit
+    from jepa_game_agent.evaluation.surprise_eval import surprise_auc
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    res = surprise_auc(model, load_episodes(args.data), args.window, args.n, args.min_gap, args.seed, device)
+    config = {"checkpoint": str(args.checkpoint), "data": str(args.data), "window": args.window}
+    config |= {"n": args.n, "min_gap": args.min_gap, "seed": args.seed}
+    res |= {"config": config, "commit": git_commit()}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(res, indent=1))
+    print(json.dumps({k: res[k] for k in ("auc", "mean_normal", "mean_jump")}))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -208,6 +224,15 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--seed", type=int, default=10_000, help="first reset seed (away from the training seeds)")
     pr.add_argument("--out", type=Path, required=True)
     pr.set_defaults(func=_probe)
+    su = sub.add_parser("surprise", help="ROC-AUC of surprise: real next frames vs jumps within the same game")
+    su.add_argument("--checkpoint", type=Path, required=True)
+    su.add_argument("--data", type=Path, required=True, help="episodes (test split)")
+    su.add_argument("--window", type=int, default=8, help="history frames before the scored step")
+    su.add_argument("--n", type=int, default=1000, help="normal / jump pairs")
+    su.add_argument("--min-gap", type=int, default=50, help="a jump lands at least this many steps away")
+    su.add_argument("--seed", type=int, default=0)
+    su.add_argument("--out", type=Path, required=True)
+    su.set_defaults(func=_surprise)
     return p
 
 
