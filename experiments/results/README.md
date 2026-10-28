@@ -86,3 +86,14 @@ Reach (same 100 tasks per K, default planner), v1 → v2:
 - K = 20: 7% → 9% (random 5%)
 
 Knowing the facing doubles medium-range success; long goals (K = 20) still need phase 3 (hierarchy).
+
+## Surprise test (`jga surprise`, 1000 pairs from the test split, jumps ≥ 50 steps away, code 759c3d5)
+
+ROC-AUC of last-step surprise, jump vs real next frame (target > 0.9):
+
+- v1: **0.997** (mean surprise: real 0.117, jump 1.76)
+- v2 (inverse dynamics): **0.998** (real 0.104, jump 1.78)
+
+The model is ~15× more surprised by a teleport than by what really happens next. Caveat: a jump
+of 50+ steps changes most of the view, so this is the easy version; small teleports (a few tiles)
+or impossible inventory changes are the harder follow-up.
