@@ -1,6 +1,5 @@
-"""Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`,
-`jga plan` (score a trained world model's planner), `jga probe` (what the latent knows),
-`jga surprise` (does it notice impossible jumps), `jga train-top` (the hierarchy's top level)."""
+"""Command line: `jga <command> -h` lists each one. Data (`collect`), training (`train`, `train-top`),
+evaluation (`baselines`, `plan`, `plan-achievement`, `probe`, `surprise`)."""
 
 from __future__ import annotations
 
@@ -137,6 +136,7 @@ def _plan(args: argparse.Namespace) -> None:
         def make_agent() -> Agent:
             assert top_cfg is not None
             return HierarchicalAgent(model, top, top_cfg, cfg, device)
+
     reach: dict[str, dict[str, object]] = {}
     for k in args.k:
         if args.env.startswith("Craftax"):  # the same tasks `jga baselines` scored
@@ -185,6 +185,51 @@ def _surprise(args: argparse.Namespace) -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=1))
     print(json.dumps({k: res[k] for k in ("auc", "mean_normal", "mean_jump")}))
+
+
+def _plan_achievement(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation import AchievementTask, Agent, JepaAgent, evaluate_achievement
+    from jepa_game_agent.evaluation.baselines import git_commit
+    from jepa_game_agent.evaluation.goals import achievement_goal_frames
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations)
+    goal_eps = [e for path in args.goal_data for e in load_episodes(path)]
+    if args.goal_split != "all":
+        goal_eps = [e for e in goal_eps if split_of(e.seed) == args.goal_split]
+    env = make_env(args.env, seed=args.seed)
+    name = "jepa"
+
+    def make_agent() -> Agent:
+        return JepaAgent(model, cfg, device)
+
+    top_cfg = None
+    if args.top is not None:
+        from jepa_game_agent.evaluation import HierarchicalAgent
+        from jepa_game_agent.training.top_trainer import load_top
+
+        top, _ = load_top(args.top, device)
+        top_cfg = PlannerConfig(args.top_horizon, args.samples, args.elites, args.iterations)
+        name = "hier"
+
+        def make_agent() -> Agent:
+            assert top_cfg is not None
+            return HierarchicalAgent(model, top, top_cfg, cfg, device)
+
+    results: dict[str, dict[str, object]] = {}
+    for ach in args.achievement:
+        goals = achievement_goal_frames(goal_eps, ach, n=args.goal_frames, seed=args.seed)
+        tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
+        results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals)}
+    config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
+    config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
+    config |= {"planner": dataclasses.asdict(cfg)}
+    if top_cfg is not None:
+        config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps({"achievement": results, "config": config, "commit": git_commit()}, indent=1))
+    print(json.dumps({a: r[name]["success_rate"] for a, r in results.items()}))  # type: ignore[index]
 
 
 def _train_top(args: argparse.Namespace) -> None:
@@ -286,6 +331,24 @@ def build_parser() -> argparse.ArgumentParser:
     tt.add_argument("--seed", type=int, default=0)
     tt.add_argument("--checkpoint", type=Path, required=True)
     tt.set_defaults(func=_train_top)
+    pa = sub.add_parser("plan-achievement", help="pursue achievements, each given as its 'just unlocked' pictures")
+    pa.add_argument("--checkpoint", type=Path, required=True)
+    pa.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
+    pa.add_argument("--top-horizon", type=int, default=5)
+    pa.add_argument("--goal-data", type=Path, nargs="+", required=True, help="recorded games to take goal frames from")
+    pa.add_argument("--goal-split", choices=("all", "train", "val", "test"), default="all")
+    pa.add_argument("--goal-frames", type=int, default=64, help="goal frames averaged into one goal latent")
+    pa.add_argument("--env", default="gridworld")
+    pa.add_argument("--achievement", nargs="+", required=True)
+    pa.add_argument("--resets", type=int, default=50, help="fresh worlds per achievement")
+    pa.add_argument("--budget", type=int, default=200)
+    pa.add_argument("--seed", type=int, default=0)
+    pa.add_argument("--horizon", type=int, default=PlannerConfig.horizon)
+    pa.add_argument("--samples", type=int, default=PlannerConfig.samples)
+    pa.add_argument("--elites", type=int, default=PlannerConfig.elites)
+    pa.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pa.add_argument("--out", type=Path, required=True)
+    pa.set_defaults(func=_plan_achievement)
     return p
 
 
