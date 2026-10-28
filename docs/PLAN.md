@@ -63,19 +63,22 @@ Decide and write down, then get approval:
 **Done when:** a dataset on Hugging Face Hub or Drive, a data card (size,
 policy mix, achievement counts), baseline numbers.
 
-### Phase 2: a flat JEPA world model
+### Phase 2: a flat JEPA world model (+ 2026 community upgrades if 1-vector fails)
 
-- Train the world model (`WorldModel`: CNN encoder + action-conditioned
+- Train the baseline world model (`WorldModel`: CNN encoder + action-conditioned
   causal transformer, SIGReg) on Colab A100, a few hours in resumable chunks.
 - Plan with categorical CEM toward goal latents (`plan_to_goal`).
 - Probe what the latent knows (position, inventory, health), as in 09 Part 3.
 - Surprise on impossible events: teleport the player, make items appear or
   vanish.
+- **Planned Phase 2B upgrades (from 2026 community findings — `H-JEPA`, `C-JEPA`, `Slot-JEPA`, `V-JEPA 2.1`) to test if the single 128-D vector blurs small HUD icons or tiles:**
+  1. **Inverse-Dynamics Auxiliary Loss (`H-JEPA`, arXiv 2610.06805):** add a head $g(z_t, z_{t+1}) \to \hat{a}_t$ (cross-entropy over 17 actions) so the encoder is forced to retain subtle inventory-bar and tile interactions instead of only encoding the background terrain.
+  2. **Structured HUD + Map / Object-Slot Latents (`C-JEPA` / `V-JEPA 2.1`):** split the 63×63 frame into a dedicated **HUD token** (bottom 14 rows: inventory + vitals) and **map/entity slots** (top 49 rows: 9×7 tile grid), with optional slot-level masking so background grass never drowns out a pickaxe icon or a moving mob.
+  3. **Factorized / Slot-Selective Goal Cost (`Slot-JEPA`):** allow `plan_to_goal` to weight HUD slots (for crafting/achievement goals) vs. map slots (for spatial navigation goals), or match displaced entities via Optimal Transport (UOT).
 
-**Measures:** short-goal success (reach a tree, collect wood: tasks that
-need under ~20 steps); probe R²; surprise AUC.
+**Measures:** short-goal success (`SR@K`, `SPL` for $K \in \{5, 10, 20\}$); Crafter 22-achievement geometric mean score; probe $R^2$ / macro-F1; open-loop retrieval `Recall@1`; surprise ROC-AUC.
 **Done when:** short goals clearly beat random (09's Push-T ratio is the
-reference: 74% vs 2%), or we know why not.
+reference: 74% vs 2%), and we have a clean ablation showing whether single-vector JEPA vs. `+Inverse-Dynamics` vs. `+HUD/Slot tokens` is needed.
 
 ### Phase 3: hierarchy for long goals
 

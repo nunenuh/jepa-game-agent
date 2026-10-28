@@ -102,12 +102,16 @@ grass, the day turns to night in one step. Surprise = the world model's
 prediction error on the next frame; AUC against normal steps, as in 09
 Part 3.
 
-### D8. Model and training, first version
+### D8. Model and training, first version + Phase 2B consideration ladder
 The built `WorldModel`: CNN encoder (latent 128) + causal transformer
 predictor (4 layers, context 16), SIGReg weight 0.09 (LeWM's), end to end.
 Training windows of 8 transitions, batch 128, AdamW 3e-4. Budget: one or two
-Colab A100 sessions (3–6 h), checkpoints every 500 steps. If the inventory
-probe is weak, try a ViT-tiny encoder (LeWM's) next.
+Colab A100 sessions (3–6 h), checkpoints every 500 steps.
+
+**If the single 128-D vector shows weak inventory/entity probes ($R^2 < 0.8$) or low surprise on small-object glitches (the IntPhys 2 failure mode), we follow this upgrade ladder in Phase 2B:**
+1. **Add Inverse-Dynamics Auxiliary Loss (`H-JEPA`, arXiv 2610.06805):** add a lightweight head $g([z_t, z_{t+1}]) \to \hat{a}_t$ trained with cross-entropy alongside `prediction + sigreg`. Because `MAKE_*` and `DO` actions only flip a 7×7 HUD icon or one adjacent tile, predicting $a_t$ forces $z_t$ to keep HUD and foreground state.
+2. **Split HUD + Map / Object-Slot Latents (`C-JEPA`, arXiv 2602.11389 / `V-JEPA 2.1`, arXiv 2603.14482):** encode the top 49×63 world view into spatial/entity slots $z_t^{\text{map}} \in \mathbb{R}^{S \times d}$ and the bottom 14×63 status bar into a dedicated HUD token $z_t^{\text{hud}} \in \mathbb{R}^d$, applying object/slot-level masking (`C-JEPA`) so background grass tiles (78% of pixels) cannot dominate the loss.
+3. **Slot-Weighted / Optimal-Transport Goal Cost (`Slot-JEPA`, arXiv 2610.28074):** weight $z^{\text{hud}}$ higher for achievement/crafting goals and $z^{\text{map}}$ (or Unbalanced Optimal Transport between entity slots) for spatial reach goals.
 
 ### D9. Reused from jepa-playground 09
 The evaluation protocol (start, goal K steps later, 2K budget), the

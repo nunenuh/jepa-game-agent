@@ -24,11 +24,15 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] PPO player code: Craftax_Baselines driver + `.npz` export + `jga collect --policy --epsilon` (smoke-tested locally)
 - [ ] Train PPO on Colab A100, collect ~1M transitions, data card, baselines on PPO data
 
-## Phase 2: flat JEPA world model
+## Phase 2: flat JEPA world model & 2026 architecture considerations
 
-- [ ] Train on Colab A100 (resumable)
-- [ ] Short-goal planning vs random
-- [ ] Probes (position, inventory, health) and surprise on impossible events
+- [ ] Train baseline 1-vector LeWM on Colab A100 (resumable)
+- [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
+- [ ] Probes (inventory, vitals, facing, negative-control map `xy`), open-loop `Recall@1`, and surprise ROC-AUC on impossible events
+- [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**
+  - [ ] Inverse-dynamics auxiliary loss $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
+  - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
+  - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
 ## Phase 3: hierarchy
 

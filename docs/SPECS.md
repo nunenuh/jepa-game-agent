@@ -165,13 +165,13 @@ reproducible, CLI end to end; the driver was smoke-tested with real
      over all $N = 22$ Craftax-Classic achievements (percentage of evaluation
      episodes unlocking achievement $i$ at least once).
   2. **Reach Success Rate (`SR@K`) and `SPL` (Success weighted by Path
-     Length)** (LeWM 2025; H-JEPA 2026; Anderson et al. 2018):
+     Length)** (LeWM 2025; H-JEPA, arXiv 2610.06805; Anderson et al. 2018):
      $$\text{SPL} = \frac{1}{M} \sum_{j=1}^{M} S_j \frac{K_j}{\max(L_j, K_j)}$$
      where $S_j \in \{0, 1\}$ is whether task $j$ succeeded, $K_j =
      |\text{goal\_actions}|$ is the reference horizon, and $L_j$ is `steps_to_success`.
      Bounded between `StillAgent` (0% on nontrivial tasks) and `ReplayAgent`
      (100%).
-  3. **Success–Compute Frontier** (H-JEPA, Zhang et al. 2026): task success
+  3. **Success–Compute Frontier** (H-JEPA, arXiv 2610.06805): task success
      rate as a function of planner world-model forward passes (tokens / FLOPs)
      and wall-clock latency (ms/step), comparing flat CEM (Phase 2),
      hierarchical CEM (Phase 3), and the amortized fast policy (Phase 5).
@@ -189,7 +189,7 @@ reproducible, CLI end to end; the driver was smoke-tested with real
   - **Negative control:** global map `(x, y)` from a single egocentric frame
     must stay near chance ($R^2 \approx 0$) until `LatentMemory` is attached
     in Phase 4.
-  - **Inverse-dynamics probe / auxiliary head** (H-JEPA DROID protocol):
+  - **Inverse-dynamics probe / auxiliary head** (as in H-JEPA, arXiv 2610.06805):
     predict action $a_t$ from $(z_t, z_{t+1})$ (top-1 accuracy across 17
     actions) to verify the latent captures fine HUD and tile interactions.
 - `evaluation.dynamics` (PLDM / LeJEPA / LeWM standard):
@@ -210,6 +210,28 @@ reproducible, CLI end to end; the driver was smoke-tested with real
     to grass, instant day-to-night flip).
   - Scored by **ROC-AUC** and **FPR@95%TPR** of per-step prediction error
     $\|\hat{z}_{t+1} - z_{t+1}\|_2^2$ and `SurpriseMeter` z-scores.
+
+### Phase 2B (planned for consideration): 2026 community upgrades (`H-JEPA`, `C-JEPA`, `Slot-JEPA`, `V-JEPA 2.1`)
+Triggered if the Phase 2 probes show that a single 128-D vector per 63×63
+frame loses fine HUD icons or small entities (the IntPhys 2 background-shortcut
+problem):
+- **Inverse-dynamics auxiliary loss (`H-JEPA`, arXiv 2610.06805, Zhang et al. 2026):**
+  `ModelConfig.inv_dyn_weight: float = 0.0`; when `> 0`, `WorldModel` adds a
+  2-layer MLP head `inv_dyn(cat(z_t, z_{t+1})) -> logits (17,)` and adds
+  `inv_dyn_weight * cross_entropy(logits, actions)` to `Losses`. Forces the
+  encoder to preserve whatever changed when an action was taken (crafting a
+  pickaxe in the 14 px HUD bar, chopping an adjacent tree).
+- **Structured HUD + Map / Object-Slot Encoder (`C-JEPA`, arXiv
+  2602.11389; `V-JEPA 2.1`, arXiv 2603.14482):**
+  `SplitEncoder` / `SlotEncoder` decomposes the 63×63 frame into:
+  1. `z_hud (d,)`: dedicated encoder on the bottom 14×63 status/inventory rows;
+  2. `z_slots (S, d)`: spatial/entity slots on the top 49×63 9×7 tile view,
+     trained with slot-level masking (`C-JEPA` latent interventions) so
+     background grass tiles cannot dominate the prediction loss.
+- **Factorized / Optimal-Transport Planning Cost (`Slot-JEPA`, arXiv 2610.28074):**
+  `plan_to_goal` accepts slot weights (`hud_weight`, `map_weight`) or
+  Unbalanced Optimal Transport (UOT) across entity slots so achievement goals
+  focus on `z_hud` while reach goals focus on `z_slots`.
 
 ### Phase 3: `hierarchy`
 - `HierarchicalWorldModel(levels)`: level k predicts `stride_k` steps
