@@ -27,6 +27,17 @@ def test_unlock_steps_refuse_episodes_with_fewer_unlock_rewards_than_achievement
     assert unlock_steps(episode([1.0, 1.0], ("collect_item",))) == {"collect_item": 0}  # repeatable: first one
 
 
+def test_an_unlock_with_heavy_damage_still_counts() -> None:
+    """Waking up is often caused by a zombie hit while asleep (-0.7 health reward): reward 1 - 0.7 = 0.3."""
+    ep = episode([0.1, 0.3, -0.2, 1.1], ("wake_up", "collect_wood"))
+    assert unlock_steps(ep) == {"wake_up": 1, "collect_wood": 3}  # +0.1 alone is only health regeneration
+
+
+def test_goal_frames_skip_episodes_whose_unlocks_dont_add_up() -> None:
+    eps = [episode([0, 0.1], ("collect_wood",)), episode([1.0, 0], ("collect_wood",))]
+    assert [int(f[0, 0, 0]) for f in achievement_goal_frames(eps, "collect_wood")] == [1]
+
+
 def test_goal_frames_are_the_frames_right_after_the_unlock() -> None:
     eps = [episode([0, 1.0, 0], ("collect_wood",)), episode([1.0, 0, 1.0], ("collect_wood", "place_table"))]
     frames = achievement_goal_frames(eps, "collect_wood", n=10, seed=0)
