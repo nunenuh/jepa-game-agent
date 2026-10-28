@@ -31,7 +31,9 @@ def _pairs(
     eligible = [e for e in episodes if len(e) >= window + min_gap]
     if not eligible:
         raise ValueError(f"no episode has window + min_gap = {window + min_gap} transitions")
-    normal, jump, actions = [], [], []
+    normal: list[Any] = []
+    jump: list[Any] = []
+    actions: list[Any] = []
     while len(normal) < n:
         e = eligible[rng.integers(len(eligible))]
         t = int(rng.integers(len(e) - window + 1))

@@ -35,6 +35,24 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class TopConfig:
+    """Top level of the hierarchy: a causal predictor where one step = `stride` game steps (an action chunk)."""
+
+    num_actions: int
+    latent_dim: int = 128  # must match the bottom encoder
+    stride: int = 4
+    context: int = 8
+    layers: int = 4
+    heads: int = 4
+
+    def __post_init__(self) -> None:
+        for name in ("num_actions", "latent_dim", "stride", "context", "layers", "heads"):
+            _positive(name, getattr(self, name))
+        if self.latent_dim % self.heads:
+            raise ValueError("latent_dim must be divisible by heads")
+
+
+@dataclass(frozen=True)
 class TrainConfig:
     steps: int = 10_000
     batch_size: int = 64

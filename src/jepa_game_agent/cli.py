@@ -1,6 +1,6 @@
 """Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`,
 `jga plan` (score a trained world model's planner), `jga probe` (what the latent knows),
-`jga surprise` (does it notice impossible jumps)."""
+`jga surprise` (does it notice impossible jumps), `jga train-top` (the hierarchy's top level)."""
 
 from __future__ import annotations
 
@@ -168,6 +168,27 @@ def _surprise(args: argparse.Namespace) -> None:
     print(json.dumps({k: res[k] for k in ("auc", "mean_normal", "mean_jump")}))
 
 
+def _train_top(args: argparse.Namespace) -> None:
+    from jepa_game_agent.config import TopConfig
+    from jepa_game_agent.models.top import TopModel
+    from jepa_game_agent.training.top_trainer import TopWindowDataset, encode_episodes, train_top
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bottom, _ = load_checkpoint(args.bottom, device)
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    latents = encode_episodes(bottom, episodes, device)
+    data = TopWindowDataset(latents, [e.actions for e in episodes], args.stride, args.window)
+    top_cfg = TopConfig(bottom.cfg.num_actions, bottom.cfg.latent_dim, args.stride, max(args.window, 2))
+    cfg = TrainConfig(steps=args.steps, batch_size=args.batch_size, window=args.window, seed=args.seed)
+    history = train_top(TopModel(top_cfg), data, cfg, checkpoint=args.checkpoint, device=device)
+    summary = {"split": args.split, "episodes": len(episodes), "stride": args.stride, "seed": args.seed}
+    print(
+        json.dumps(summary | {"steps": history[-1]["step"] if history else 0, "last": history[-1] if history else None})
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -233,6 +254,17 @@ def build_parser() -> argparse.ArgumentParser:
     su.add_argument("--seed", type=int, default=0)
     su.add_argument("--out", type=Path, required=True)
     su.set_defaults(func=_surprise)
+    tt = sub.add_parser("train-top", help="train the hierarchy's top level on a frozen bottom model's latents")
+    tt.add_argument("--data", type=Path, nargs="+", required=True)
+    tt.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    tt.add_argument("--bottom", type=Path, required=True, help="trained world model checkpoint (frozen encoder)")
+    tt.add_argument("--stride", type=int, default=4, help="game steps per top-level step")
+    tt.add_argument("--window", type=int, default=8, help="top-level steps per training sample")
+    tt.add_argument("--steps", type=int, default=10_000)
+    tt.add_argument("--batch-size", type=int, default=256)
+    tt.add_argument("--seed", type=int, default=0)
+    tt.add_argument("--checkpoint", type=Path, required=True)
+    tt.set_defaults(func=_train_top)
     return p
 
 
