@@ -24,20 +24,22 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] PPO player code: Craftax_Baselines driver + `.npz` export + `jga collect --policy --epsilon` (smoke-tested locally)
 - [x] Train PPO on Colab A100, collect ~1M transitions, data card, baselines on PPO data ([results](experiments/results/README.md): replay 100%, random 4-5%, still 0%)
 
-## Phase 2: flat JEPA world model & 2026 architecture considerations (next)
+## Phase 2: flat JEPA world model & 2026 architecture considerations (main targets met)
 
 - [x] Train baseline 1-vector LeWM on Colab A100 (resumable): 30k steps, ~35 min
 - [x] JEPA planning agent + `jga plan`: reach K=5 33% / K=10 12% / K=20 7% vs random 4/4/5% ([results](experiments/results/README.md))
 - [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
 - [x] Linear probes (`jga probe`): facing, inventory, negative-control map `xy`
 - [x] Surprise ROC-AUC on impossible jumps: 0.998 (target > 0.9)
-- [ ] Probes for vitals, open-loop `Recall@1`, harder surprise events (small teleports, impossible inventory changes)
+- [ ] Deferred (see [docs/DEFERRED.md](docs/DEFERRED.md)): vitals probes, open-loop `Recall@1`, harder surprise events
 - [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**
   - [x] Inverse-dynamics auxiliary loss (facing R² -0.41 → 0.60; K=10 12% → 25%) $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
   - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
-## Phase 3: hierarchy
+## Phase 3: hierarchy (next)
+
+- [ ] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) drafted, awaiting approval
 
 - [ ] 2–3 level world model, top-down planning
 - [ ] Long goals: flat vs hierarchical
