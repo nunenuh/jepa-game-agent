@@ -57,3 +57,40 @@ def test_rollout_shapes_and_history(small_cfg: ModelConfig) -> None:
     assert wm.rollout(start, acts[:, :2], hist, hist_a).shape == (3, 2, 32)
     with pytest.raises(ValueError):
         wm.rollout(start, acts, history=hist)
+
+
+def test_inverse_dynamics_is_off_by_default_so_old_checkpoints_still_load(small_cfg: ModelConfig) -> None:
+    wm = WorldModel(small_cfg)
+    assert wm.inverse is None and not any(k.startswith("inverse") for k in wm.state_dict())
+    losses = wm.loss(torch.rand(2, 5, 3, 16, 16), torch.randint(5, (2, 4)))
+    assert losses.inverse.item() == 0.0
+
+
+def test_inverse_dynamics_adds_an_action_classification_loss(small_cfg: ModelConfig) -> None:
+    from dataclasses import replace
+
+    cfg = replace(small_cfg, inverse_weight=0.5)
+    wm = WorldModel(cfg)
+    frames, actions = torch.rand(2, 5, 3, 16, 16), torch.randint(5, (2, 4))
+    losses = wm.loss(frames, actions)
+    expected = losses.prediction + cfg.sigreg_weight * losses.sigreg + 0.5 * losses.inverse
+    assert losses.inverse > 0 and torch.allclose(losses.total, expected)
+    losses.total.backward()
+    assert wm.inverse is not None and all(p.grad is not None for p in wm.inverse.parameters())
+    with pytest.raises(ValueError):
+        replace(small_cfg, inverse_weight=-1.0)
+
+
+def test_inverse_dynamics_learns_which_move_was_made(episodes, small_cfg: ModelConfig) -> None:  # type: ignore[no-untyped-def]
+    """GridWorld moves are visible, so the action between two frames can be learned (it's ~chance at init)."""
+    from dataclasses import replace
+
+    from jepa_game_agent.config import TrainConfig
+    from jepa_game_agent.data.episodes import WindowDataset
+    from jepa_game_agent.training import train
+
+    wm = WorldModel(replace(small_cfg, inverse_weight=1.0))
+    hist = train(wm, WindowDataset(episodes, 4), TrainConfig(steps=200, batch_size=16, lr=1e-3))
+    first = sum(h["inverse"] for h in hist[:5]) / 5
+    last = sum(h["inverse"] for h in hist[-5:]) / 5
+    assert last < 0.5 * first

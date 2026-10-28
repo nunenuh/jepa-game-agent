@@ -21,6 +21,7 @@ class ModelConfig:
     predictor_layers: int = 4
     predictor_heads: int = 4
     sigreg_weight: float = 0.09  # LeWM's Push-T setting
+    inverse_weight: float = 0.0  # > 0 adds an inverse-dynamics head: guess a_t from (z_t, z_t+1)
 
     def __post_init__(self) -> None:
         for name in ("num_actions", "latent_dim", "channels", "context", "predictor_layers", "predictor_heads"):
@@ -29,6 +30,8 @@ class ModelConfig:
             raise ValueError("latent_dim must be divisible by predictor_heads")
         if self.sigreg_weight < 0:
             raise ValueError("sigreg_weight must be >= 0")
+        if self.inverse_weight < 0:
+            raise ValueError("inverse_weight must be >= 0")
 
 
 @dataclass(frozen=True)

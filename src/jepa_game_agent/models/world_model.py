@@ -19,6 +19,7 @@ class Losses:
     total: torch.Tensor
     prediction: torch.Tensor
     sigreg: torch.Tensor
+    inverse: torch.Tensor  # inverse-dynamics cross-entropy (0 when the head is off)
 
 
 class WorldModel(nn.Module):
@@ -29,6 +30,12 @@ class WorldModel(nn.Module):
         self.predictor = Predictor(
             cfg.num_actions, cfg.latent_dim, cfg.context, cfg.predictor_layers, cfg.predictor_heads
         )
+        # Inverse dynamics: which action led from z_t to z_t+1? Forces the latent to keep what actions change
+        # (e.g. the player's facing in Craftax). Only built when used, so older checkpoints load unchanged.
+        self.inverse: nn.Module | None = None
+        if cfg.inverse_weight > 0:
+            d = cfg.latent_dim
+            self.inverse = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, cfg.num_actions))
 
     def encode(self, frames: torch.Tensor) -> torch.Tensor:
         z: torch.Tensor = self.encoder(frames)
@@ -40,7 +47,12 @@ class WorldModel(nn.Module):
         pred = self.predictor(z[:, :-1], actions)
         prediction = F.mse_loss(pred, z[:, 1:])
         reg = sigreg(z.reshape(-1, z.size(-1)))
-        return Losses(prediction + self.cfg.sigreg_weight * reg, prediction, reg)
+        inverse = torch.zeros((), device=z.device)
+        if self.inverse is not None:
+            logits = self.inverse(torch.cat([z[:, :-1], z[:, 1:]], -1))
+            inverse = F.cross_entropy(logits.reshape(-1, logits.size(-1)), actions.reshape(-1))
+        total = prediction + self.cfg.sigreg_weight * reg + self.cfg.inverse_weight * inverse
+        return Losses(total, prediction, reg, inverse)
 
     @torch.no_grad()
     def rollout(

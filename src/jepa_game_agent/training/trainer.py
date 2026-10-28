@@ -69,6 +69,7 @@ def train(
                     "loss": losses.total.item(),
                     "prediction": losses.prediction.item(),
                     "sigreg": losses.sigreg.item(),
+                    "inverse": losses.inverse.item(),
                 }
             )
             if checkpoint is not None and (step % cfg.checkpoint_every == 0 or step == cfg.steps):

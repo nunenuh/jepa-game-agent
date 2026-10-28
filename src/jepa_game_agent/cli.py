@@ -63,6 +63,7 @@ def _train(args: argparse.Namespace) -> None:
             latent_dim=args.latent_dim,
             channels=episodes[0].frames.shape[-1],
             context=max(args.window, 2),
+            inverse_weight=args.inverse_weight,
         )
     )
     cfg = TrainConfig(
@@ -168,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--split", choices=("all", "train", "val", "test"), default="all", help="keep one split (by seed)")
     t.add_argument("--num-actions", type=int, required=True)
     t.add_argument("--latent-dim", type=int, default=128)
+    t.add_argument("--inverse-weight", type=float, default=0.0, help="> 0 adds the inverse-dynamics loss")
     t.add_argument("--window", type=int, default=8)
     t.add_argument("--steps", type=int, default=1000)
     t.add_argument("--batch-size", type=int, default=64)
