@@ -113,13 +113,30 @@ def _baselines(args: argparse.Namespace) -> None:
 
 
 def _plan(args: argparse.Namespace) -> None:
-    from jepa_game_agent.evaluation import JepaAgent, evaluate_reach, make_reach_tasks
+    from jepa_game_agent.evaluation import Agent, JepaAgent, evaluate_reach, make_reach_tasks
     from jepa_game_agent.evaluation.baselines import git_commit
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
     cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations)
     episodes, env = load_episodes(args.data), make_env(args.env, seed=args.seed)
+    name = "jepa"
+
+    def make_agent() -> Agent:
+        return JepaAgent(model, cfg, device)
+
+    top_cfg = None
+    if args.top is not None:  # hierarchical: the top sets subgoals, the bottom walks
+        from jepa_game_agent.evaluation import HierarchicalAgent
+        from jepa_game_agent.training.top_trainer import load_top
+
+        top, _ = load_top(args.top, device)
+        top_cfg = PlannerConfig(args.top_horizon, args.samples, args.elites, args.iterations)
+        name = "hier"
+
+        def make_agent() -> Agent:
+            assert top_cfg is not None
+            return HierarchicalAgent(model, top, top_cfg, cfg, device)
     reach: dict[str, dict[str, object]] = {}
     for k in args.k:
         if args.env.startswith("Craftax"):  # the same tasks `jga baselines` scored
@@ -128,12 +145,14 @@ def _plan(args: argparse.Namespace) -> None:
             tasks = choose_reach_tasks(args.env, episodes, k, args.tasks, args.seed)
         else:
             tasks = make_reach_tasks(episodes, k=k, n=args.tasks, seed=args.seed, env=env)
-        reach[f"k={k}"] = {"jepa": evaluate_reach(lambda: env, tasks, lambda t: JepaAgent(model, cfg, device))}
+        reach[f"k={k}"] = {name: evaluate_reach(lambda: env, tasks, lambda t: make_agent())}
     config = {"env": args.env, "data": str(args.data), "checkpoint": str(args.checkpoint), "ks": list(args.k)}
     config |= {"tasks": args.tasks, "seed": args.seed, "planner": dataclasses.asdict(cfg)}
+    if top_cfg is not None:
+        config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"reach": reach, "config": config, "commit": git_commit()}, indent=1))
-    print(json.dumps({k: r["jepa"]["success_rate"] for k, r in reach.items()}))  # type: ignore[index]
+    print(json.dumps({k: r[name]["success_rate"] for k, r in reach.items()}))  # type: ignore[index]
 
 
 def _probe(args: argparse.Namespace) -> None:
@@ -235,6 +254,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--samples", type=int, default=PlannerConfig.samples)
     pl.add_argument("--elites", type=int, default=PlannerConfig.elites)
     pl.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pl.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
+    pl.add_argument("--top-horizon", type=int, default=5, help="top-level plan length, in chunks")
     pl.add_argument("--out", type=Path, required=True)
     pl.set_defaults(func=_plan)
     pr = sub.add_parser("probe", help="linear probes: R² of each state-key field read off the latent")

@@ -128,3 +128,22 @@ def test_cli_plan_scores_a_checkpoint_on_the_baseline_tasks(tmp_path: Path, caps
     assert jepa["goal_keys"] == replay["goal_keys"]  # the very tasks the baselines were scored on
     assert res["config"]["planner"]["horizon"] == 3 and res["config"]["checkpoint"] == str(ckpt)
     assert json.loads(capsys.readouterr().out) == {"k=3": jepa["success_rate"]}
+
+
+def test_cli_plan_with_a_top_model_runs_the_hierarchical_agent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    data, wm, top, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "top.pt", tmp_path / "plan.json"
+    main(["collect", "--episodes", "6", "--max-steps", "30", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "2",
+          "--batch-size", "8", "--checkpoint", str(wm)])  # fmt: skip
+    main(["train-top", "--data", str(data), "--bottom", str(wm), "--window", "2", "--steps", "2", "--batch-size", "8",
+          "--checkpoint", str(top)])  # fmt: skip
+    capsys.readouterr()
+    main(["plan", "--checkpoint", str(wm), "--top", str(top), "--top-horizon", "2", "--data", str(data), "--k", "3",
+          "--tasks", "4", "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1",
+          "--out", str(out)])  # fmt: skip
+    res = json.loads(out.read_text())
+    assert res["reach"]["k=3"]["hier"]["tasks"] == 4 and res["config"]["top"] == str(top)
+    assert res["config"]["top_planner"]["horizon"] == 2
+    assert set(json.loads(capsys.readouterr().out)) == {"k=3"}
