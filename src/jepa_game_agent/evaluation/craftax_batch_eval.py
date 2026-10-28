@@ -234,6 +234,15 @@ def batch_achievement(name: str, tasks: Sequence[AchievementTask], agent: str, s
     }
 
 
+def choose_reach_tasks(name: str, episodes: Sequence[Any], k: int, n: int, seed: int = 0) -> list[ReachTask]:
+    """The first n usable tasks among 4n candidates: the tasks `run_baselines_batch` scores for this k."""
+    from jepa_game_agent.evaluation.tasks import make_reach_tasks
+
+    candidates = make_reach_tasks(episodes, k=k, n=4 * n, seed=seed)
+    keep = usable(name, candidates)
+    return [t for t, ok in zip(candidates, keep, strict=True) if ok][:n]
+
+
 def run_baselines_batch(
     name: str,
     episodes: Sequence[Any],
@@ -249,13 +258,10 @@ def run_baselines_batch(
     Unusable reach tasks (trivial, or past the end of the replayed game) are skipped.
     """
     from jepa_game_agent.evaluation.baselines import git_commit
-    from jepa_game_agent.evaluation.tasks import make_reach_tasks
 
     reach: dict[str, dict[str, Any]] = {}
     for k in ks:
-        candidates = make_reach_tasks(episodes, k=k, n=4 * tasks, seed=seed)
-        keep = usable(name, candidates)
-        chosen = [t for t, ok in zip(candidates, keep, strict=True) if ok][:tasks]
+        chosen = choose_reach_tasks(name, episodes, k, tasks, seed)
         reach[f"k={k}"] = {agent: batch_reach(name, chosen, agent, seed=seed) for agent in AGENTS}
     ach: dict[str, dict[str, Any]] = {}
     for a in achievements:

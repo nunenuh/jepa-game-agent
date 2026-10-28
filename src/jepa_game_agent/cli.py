@@ -1,15 +1,17 @@
-"""Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`."""
+"""Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`,
+`jga plan` (score a trained world model's planner)."""
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 from collections.abc import Sequence
 from pathlib import Path
 
 import torch
 
-from jepa_game_agent.config import ModelConfig, TrainConfig
+from jepa_game_agent.config import ModelConfig, PlannerConfig, TrainConfig
 from jepa_game_agent.data.episodes import (
     WindowDataset,
     collect_episode,
@@ -21,7 +23,7 @@ from jepa_game_agent.data.episodes import (
 )
 from jepa_game_agent.envs import make_env
 from jepa_game_agent.models.world_model import WorldModel
-from jepa_game_agent.training.trainer import train
+from jepa_game_agent.training.trainer import load_checkpoint, train
 
 
 def _collect(args: argparse.Namespace) -> None:
@@ -108,6 +110,30 @@ def _baselines(args: argparse.Namespace) -> None:
     print(json.dumps(summary(results)))
 
 
+def _plan(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation import JepaAgent, evaluate_reach, make_reach_tasks
+    from jepa_game_agent.evaluation.baselines import git_commit
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations)
+    episodes, env = load_episodes(args.data), make_env(args.env, seed=args.seed)
+    reach: dict[str, dict[str, object]] = {}
+    for k in args.k:
+        if args.env.startswith("Craftax"):  # the same tasks `jga baselines` scored
+            from jepa_game_agent.evaluation.craftax_batch_eval import choose_reach_tasks
+
+            tasks = choose_reach_tasks(args.env, episodes, k, args.tasks, args.seed)
+        else:
+            tasks = make_reach_tasks(episodes, k=k, n=args.tasks, seed=args.seed, env=env)
+        reach[f"k={k}"] = {"jepa": evaluate_reach(lambda: env, tasks, lambda t: JepaAgent(model, cfg, device))}
+    config = {"env": args.env, "data": str(args.data), "checkpoint": str(args.checkpoint), "ks": list(args.k)}
+    config |= {"tasks": args.tasks, "seed": args.seed, "planner": dataclasses.asdict(cfg)}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps({"reach": reach, "config": config, "commit": git_commit()}, indent=1))
+    print(json.dumps({k: r["jepa"]["success_rate"] for k, r in reach.items()}))  # type: ignore[index]
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -142,6 +168,19 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--out", type=Path, required=True)
     b.set_defaults(func=_baselines)
+    pl = sub.add_parser("plan", help="score a trained world model's planner on the baseline reach tasks")
+    pl.add_argument("--checkpoint", type=Path, required=True)
+    pl.add_argument("--data", type=Path, required=True, help="episodes to draw reach tasks from (test split)")
+    pl.add_argument("--env", default="gridworld")
+    pl.add_argument("--k", type=int, nargs="+", default=[5, 10, 20])
+    pl.add_argument("--tasks", type=int, default=100)
+    pl.add_argument("--seed", type=int, default=0)
+    pl.add_argument("--horizon", type=int, default=PlannerConfig.horizon)
+    pl.add_argument("--samples", type=int, default=PlannerConfig.samples)
+    pl.add_argument("--elites", type=int, default=PlannerConfig.elites)
+    pl.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pl.add_argument("--out", type=Path, required=True)
+    pl.set_defaults(func=_plan)
     return p
 
 

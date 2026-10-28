@@ -111,3 +111,20 @@ def test_cli_train_reads_many_files_and_keeps_one_split(tmp_path: Path, capsys: 
     assert out["episodes"] == 2 and out["transitions"] == 20 and out["split"] == "train"
     main([*args, "--data", str(a), str(b)])  # default: every episode
     assert json.loads(capsys.readouterr().out)["episodes"] == 4
+
+
+def test_cli_plan_scores_a_checkpoint_on_the_baseline_tasks(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    data, ckpt, out, base = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "plan.json", tmp_path / "b.json"
+    main(["collect", "--episodes", "6", "--max-steps", "30", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "3",
+          "--batch-size", "8", "--checkpoint", str(ckpt)])  # fmt: skip
+    main(["baselines", "--data", str(data), "--k", "3", "--tasks", "5", "--out", str(base)])
+    capsys.readouterr()
+    main(["plan", "--checkpoint", str(ckpt), "--data", str(data), "--k", "3", "--tasks", "5", "--horizon", "3",
+          "--samples", "16", "--elites", "4", "--iterations", "2", "--out", str(out)])  # fmt: skip
+    res = json.loads(out.read_text())
+    jepa, replay = res["reach"]["k=3"]["jepa"], json.loads(base.read_text())["reach"]["k=3"]["replay"]
+    assert jepa["tasks"] == 5 and 0.0 <= jepa["success_rate"] <= 1.0
+    assert jepa["goal_keys"] == replay["goal_keys"]  # the very tasks the baselines were scored on
+    assert res["config"]["planner"]["horizon"] == 3 and res["config"]["checkpoint"] == str(ckpt)
+    assert json.loads(capsys.readouterr().out) == {"k=3": jepa["success_rate"]}

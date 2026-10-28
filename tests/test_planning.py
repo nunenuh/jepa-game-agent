@@ -42,3 +42,19 @@ def test_plan_beats_random_with_an_exact_model() -> None:
     seq = plan_to_goal(wm, torch.zeros(2), torch.tensor([3.0, 2.0]), PlannerConfig(horizon=5, seed=0))
     final = step[seq].sum(0)
     assert torch.allclose(final, torch.tensor([3.0, 2.0]))
+
+
+def test_plan_heads_for_the_goal_from_the_first_step() -> None:
+    """Agents play only the first planned action, so plans must reach the goal early, not just end there."""
+    cfg_m = ModelConfig(num_actions=5, latent_dim=2, context=8, predictor_layers=1, predictor_heads=1)
+    wm = WorldModel(cfg_m).eval()
+    step = torch.tensor([[0.0, 0.0], [0.0, -1.0], [0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]])
+
+    class Exact(torch.nn.Module):
+        def forward(self, latents: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+            return latents + step[actions]
+
+    wm.predictor = Exact()  # type: ignore[assignment]
+    cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, seed=0)
+    assert plan_to_goal(wm, torch.tensor([2.0, 2.0]), torch.tensor([2.0, 1.0]), cfg)[0].item() == 1  # LEFT
+    assert plan_to_goal(wm, torch.tensor([2.0, 1.0]), torch.tensor([2.0, 1.0]), cfg)[0].item() == 0  # stay

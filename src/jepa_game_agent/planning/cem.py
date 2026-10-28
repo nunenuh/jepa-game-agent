@@ -37,11 +37,15 @@ def categorical_cem(
 
 
 def plan_to_goal(model: WorldModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig) -> torch.Tensor:
-    """Action sequence (K,) whose imagined final latent is closest to the goal latent. now, goal: (D,)."""
+    """Action sequence (K,) whose imagined latents get closest to the goal latent soonest. now, goal: (D,).
+
+    Cost = distance to the goal summed over every imagined step (not only the last): agents play just the
+    first action and plan again, so a plan that detours and comes back would waste that action.
+    """
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
-        final = model.rollout(now.expand(len(seqs), -1), seqs)[:, -1]
-        return (final - goal).pow(2).sum(-1)
+        path = model.rollout(now.expand(len(seqs), -1), seqs)  # (N, K, D)
+        return (path - goal).pow(2).sum(-1).sum(-1)
 
     seq, _ = categorical_cem(cost, model.cfg.num_actions, cfg, device=now.device)
     return seq
