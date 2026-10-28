@@ -1,5 +1,5 @@
 """Command line: `jga collect` (record episodes), `jga train` (train the world model), `jga baselines`,
-`jga plan` (score a trained world model's planner)."""
+`jga plan` (score a trained world model's planner), `jga probe` (what the latent knows)."""
 
 from __future__ import annotations
 
@@ -134,6 +134,23 @@ def _plan(args: argparse.Namespace) -> None:
     print(json.dumps({k: r["jepa"]["success_rate"] for k, r in reach.items()}))  # type: ignore[index]
 
 
+def _probe(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation.baselines import git_commit
+    from jepa_game_agent.evaluation.probes import run_probes
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    env = make_env(args.env, seed=args.seed)
+    seeds = [args.seed + i for i in range(args.episodes)]
+    res = run_probes(model, env, random_policy(env.num_actions), seeds, args.max_steps, device)
+    config = {"env": args.env, "checkpoint": str(args.checkpoint), "episodes": args.episodes}
+    config |= {"max_steps": args.max_steps, "seed": args.seed, "policy": "random"}
+    res |= {"config": config, "commit": git_commit()}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(res, indent=1))
+    print(json.dumps(res["r2"]))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -181,6 +198,14 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
     pl.add_argument("--out", type=Path, required=True)
     pl.set_defaults(func=_plan)
+    pr = sub.add_parser("probe", help="linear probes: R² of each state-key field read off the latent")
+    pr.add_argument("--checkpoint", type=Path, required=True)
+    pr.add_argument("--env", default="gridworld")
+    pr.add_argument("--episodes", type=int, default=50, help="random-play episodes (1 in 5 held out)")
+    pr.add_argument("--max-steps", type=int, default=300)
+    pr.add_argument("--seed", type=int, default=10_000, help="first reset seed (away from the training seeds)")
+    pr.add_argument("--out", type=Path, required=True)
+    pr.set_defaults(func=_probe)
     return p
 
 
