@@ -1,6 +1,6 @@
 # Design note: phase 3, hierarchy for long goals
 
-Status: **draft, for approval**. Phase 0's note is [DESIGN.md](DESIGN.md);
+Status: **approved 2026-10-28** (H1 as drafted, H3 picture goals, H4 set to the research-standard bar below). Phase 0's note is [DESIGN.md](DESIGN.md);
 results so far in [experiments/results](../experiments/results/README.md).
 
 ## The problem
@@ -71,10 +71,16 @@ planner is good at.
 ### H4. What we compare (same tasks, same budgets)
 - Reach K = 10, 20, 40: flat v2 vs hierarchical.
 - Achievements: random vs flat v2 vs hierarchical.
-- **Done when:** hierarchical beats flat clearly at K = 20 (target ≥ 2×,
-  i.e. ≥ 18%) and on at least one achievement random can't do
-  (make_wood_pickaxe or collect_stone > 0%). Each miss reported with a
-  reason.
+- **How we judge (research practice):** both agents run the *same* tasks,
+  so the comparison is paired: McNemar's test on tasks one solves and the
+  other doesn't. Every success rate is reported with a 95% Wilson
+  confidence interval. The top model is trained with 3 seeds (it is cheap)
+  and results are reported per seed and as mean ± std, so one lucky run
+  can't carry the claim.
+- **Done when:** at K = 20, hierarchical beats flat with McNemar p < 0.05 on
+  all 3 seeds (stretch: ≥ 2×, i.e. ≥ 18%); and on make_wood_pickaxe or
+  collect_stone, which random never does, the 95% CI lower bound is above
+  0 (in practice ≥ 3 of 50 worlds). Each miss reported with a reason.
 
 ### H5. Not in this phase
 - LLM subgoals ("make a stone pickaxe" → wood, table, pickaxe, stone): an
@@ -104,8 +110,10 @@ planner is good at.
   Phase 2B slot-cost option in SPECS).
 - **Still drifting at K = 40:** add the third level.
 
-## Open questions for approval
+## Approval (2026-10-28)
 
-1. Two levels with a 4-step top, sharing the frozen v2 encoder (H1): OK?
-2. Achievement goals as averaged "just unlocked" frames (H3): OK?
-3. Done-when targets in H4: OK, or stricter / looser?
+1. H1, two levels sharing the frozen v2 encoder: approved.
+2. H3, goals as pictures (averaged "just unlocked" frames), not words: approved. Pictures keep the
+   agent reward- and language-free (it plans in the same latent space it sees); words can come later
+   through an LLM that maps text to an achievement, which then maps to its picture goal.
+3. H4: the research-standard bar above (paired McNemar, Wilson CIs, 3 seeds).

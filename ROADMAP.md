@@ -39,7 +39,7 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 
 ## Phase 3: hierarchy (next)
 
-- [ ] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) drafted, awaiting approval
+- [ ] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) approved 2026-10-28
 
 - [ ] 2–3 level world model, top-down planning
 - [ ] Long goals: flat vs hierarchical
