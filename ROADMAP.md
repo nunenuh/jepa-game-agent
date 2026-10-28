@@ -30,7 +30,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] JEPA planning agent + `jga plan`: reach K=5 33% / K=10 12% / K=20 7% vs random 4/4/5% ([results](experiments/results/README.md))
 - [ ] Short-goal planning (`SR@K`, `SPL`) & Crafter geometric mean score vs random
 - [x] Linear probes (`jga probe`): facing, inventory, negative-control map `xy`
-- [ ] Probes for vitals, open-loop `Recall@1`, and surprise ROC-AUC on impossible events
+- [x] Surprise ROC-AUC on impossible jumps: 0.998 (target > 0.9)
+- [ ] Probes for vitals, open-loop `Recall@1`, harder surprise events (small teleports, impossible inventory changes)
 - [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**
   - [x] Inverse-dynamics auxiliary loss (facing R² -0.41 → 0.60; K=10 12% → 25%) $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
   - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
