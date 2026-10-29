@@ -216,3 +216,26 @@ def test_count_stage_already_met_is_skipped_and_needs_counts() -> None:
     assert log.goals == [0, 1]
     with pytest.raises(ValueError):
         evaluate_chain(lambda: env, [AchievementTask("place_table", seed=0, budget=2)], lambda t: log, chain)
+
+
+class _DyingEnv(_ScriptedEnv):
+    """Ends the episode (the player dies) at step `death`."""
+
+    def __init__(self, script: dict[int, tuple[str, ...]], death: int) -> None:
+        super().__init__(script)
+        self.death = death
+
+    def step(self, action: int) -> StepResult:
+        r = super().step(action)
+        return StepResult(r.frame, r.reward, self.t >= self.death, r.info, r.achievements)
+
+
+def test_chain_reports_episode_length_and_how_it_ended() -> None:
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b"))]
+    tasks = [AchievementTask("b", seed=0, budget=10)]
+    died = evaluate_chain(lambda: _DyingEnv({2: ("a",)}, death=4), tasks, lambda t: _GoalLog(), chain)
+    assert died["lengths"] == [4] and died["ended"] == ["done"]
+    won = evaluate_chain(lambda: _DyingEnv({2: ("a",), 3: ("b",)}, death=9), tasks, lambda t: _GoalLog(), chain)
+    assert won["lengths"] == [3] and won["ended"] == ["success"]
+    out = evaluate_chain(lambda: _DyingEnv({}, death=99), tasks, lambda t: _GoalLog(), chain)
+    assert out["lengths"] == [10] and out["ended"] == ["budget"]

@@ -135,7 +135,7 @@ def evaluate_chain(
     if counts is None and any(st.item is not None for st in stages):
         raise ValueError("stages that count items need counts(env)")
     labels = [st.label for st in stages]
-    successes, steps, reached, unlocked = [], [], [], []
+    successes, steps, reached, unlocked, lengths, ended = [], [], [], [], [], []
     for task in tasks:
         env = make_env()
         frame = env.reset(task.seed)
@@ -143,8 +143,7 @@ def evaluate_chain(
         got: list[str] = []
         stage = 0
         agent.reset(list(stages[0].frames))
-        hit = None
-
+        hit, step, how = None, 0, "budget"
         for step in range(1, task.budget + 1):
             result = env.step(agent.act(frame))
             frame = result.frame
@@ -153,12 +152,15 @@ def evaluate_chain(
             while stage < len(stages) and _stage_done(stages[stage], got, env, counts):
                 stage += 1
             if stage == len(stages):
-                hit = step
+                hit, how = step, "success"
                 break
             if stage != before:
                 agent.reset(list(stages[stage].frames))
-            if result.done:
+            if result.done:  # Craftax: the player died
+                how = "done"
                 break
+        lengths.append(step)
+        ended.append(how)
         successes.append(hit is not None)
         steps.append(hit)
         reached.append(labels[:stage])
@@ -173,5 +175,7 @@ def evaluate_chain(
         "steps_to_success": steps,
         "reached": reached,
         "unlocked": unlocked,
+        "lengths": lengths,
+        "ended": ended,
         "stage_rates": {lb: sum(lb in r for r in reached) / n if n else 0.0 for lb in labels},
     }

@@ -167,3 +167,16 @@ def test_blend_goal_is_the_mean_of_picture_and_change() -> None:
     assert agent.goal is not None and agent.goal.tolist() == [1.0, 1.5]  # ((0, 1) + (2, 2)) / 2
     with pytest.raises(ValueError):
         JepaAgent(exact_model(), PlannerConfig(), goal_as="both", reach=0.0)
+
+
+def test_both_can_travel_to_the_before_picture() -> None:
+    """travel='before': walk to where the change starts (e.g. facing a tree), not to how it looks afterwards."""
+    env = make_env()
+    env.reset(seed=0)
+    pair = np.stack([env.set_agent(0, 0), env.set_agent(0, 1)])
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, goal_as="both", travel="before")
+    agent.reset([pair])
+    assert agent.goal is not None and agent.goal.tolist() == [0.0, 0.0]
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, goal_as="both", travel="sideways")

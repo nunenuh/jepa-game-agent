@@ -255,7 +255,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
-                         prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach)  # fmt: skip
+                         prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
+                         travel=args.travel)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -271,7 +272,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             assert top_cfg is not None
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
-                                     goal_as=args.goal_as, reach=args.reach)  # fmt: skip
+                                     goal_as=args.goal_as, reach=args.reach, travel=args.travel)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -298,6 +299,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
     config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as, "reach": args.reach}
+    config |= {"travel": args.travel}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -554,6 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
         "both: travel by picture, do the change once reachable; blend: mean of picture and change goals",
     )  # fmt: skip
     pa.add_argument("--reach", type=float, default=0.5, help="both: change counts as reachable within this share")
+    pa.add_argument("--travel", choices=("after", "before"), default="after",
+                    help="both/blend: travel to the after-unlock picture or to the before-unlock one")  # fmt: skip
     pa.add_argument("--prior-mix", type=float, default=0.1, help="share of uniform blended into the prior")
     pa.add_argument(
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"

@@ -148,11 +148,13 @@ def test_cli_plan_achievement_with_change_goals(tmp_path: Path, goal_as: str) ->
     main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
     main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
           "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
-    main(["plan-achievement", "--goal-as", goal_as, "--reach", "0.3", "--checkpoint", str(wm), "--goal-data", str(data),
+    main(["plan-achievement", "--goal-as", goal_as, "--reach", "0.3", "--travel", "before", "--checkpoint", str(wm),
+          "--goal-data", str(data),
           "--achievement", "collect_item", "--chain", "--resets", "2", "--budget", "5", "--goal-frames", "2",
           "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
     res = json.loads(out.read_text())
     assert res["config"]["goal_as"] == goal_as and res["config"]["reach"] == 0.3 and res["chain"]["jepa"]["tasks"] == 2
+    assert res["config"]["travel"] == "before" and len(res["chain"]["jepa"]["lengths"]) == 2
 
 
 def test_parse_stage() -> None:

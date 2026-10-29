@@ -27,6 +27,8 @@ class JepaAgent:
     goal_as="both": travel toward the picture (the pairs' after frames), but each step first plan for the change;
     if that plan gets within reach * |change|^2 of it, play it (the change is doable from here).
     goal_as="blend": goal = the mean of the picture and the change goal (same as adding the two costs).
+    travel: which picture both/blend travel to, "after" (how having it looks) or "before" (where the change
+    starts, e.g. facing a tree with enough wood).
     """
 
     def __init__(
@@ -40,6 +42,7 @@ class JepaAgent:
         prior_mix: float = 0.1,
         goal_as: str = "picture",
         reach: float = 0.5,
+        travel: str = "after",
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -49,6 +52,9 @@ class JepaAgent:
             raise ValueError(f"goal_as={goal_as!r} and hud_rows can't be combined")
         if not 0.0 < reach <= 1.0:
             raise ValueError("reach must be in (0, 1]")
+        if travel not in ("after", "before"):
+            raise ValueError(f"travel must be 'after' or 'before', got {travel!r}")
+        self.travel = travel
         self.goal_as, self.reach = goal_as, reach
         self._delta: torch.Tensor | None = None
         self._picture: torch.Tensor | None = None
@@ -75,9 +81,9 @@ class JepaAgent:
             pairs = np.stack(goal_frames)
             if pairs.ndim != 5 or pairs.shape[1] != 2:
                 raise ValueError(f"goal_as={self.goal_as!r} needs (2, H, W, C) before/after pairs")
-            after = self._encode(list(pairs[:, 1]))
-            self._delta = (after - self._encode(list(pairs[:, 0]))).mean(0)
-            self._picture = after.mean(0)
+            before, after = self._encode(list(pairs[:, 0])), self._encode(list(pairs[:, 1]))
+            self._delta = (after - before).mean(0)
+            self._picture = (before if self.travel == "before" else after).mean(0)
             self.goal = self._delta if self.goal_as == "change" else self._picture  # change: set per step
             self._goal_frames = pairs[:, 1]
             return
