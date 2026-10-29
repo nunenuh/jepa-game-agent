@@ -203,3 +203,26 @@ random gets 48% wood in 200.)
 - Kept: v2 (inverse dynamics) as the planning model; the chain runner and HUD encoder as tools.
 - Not tried (deferred): a planning cost that weights view and inventory separately, and action priors
   learned from data (how often an action follows a state) to make rare crafting actions tryable.
+
+## Phase 3 round 5: action prior and balanced cost (code c2054d3)
+
+Action prior: MLP latent → action, trained on the PPO train split (5k steps; cross-entropy 2.26 for v2,
+2.23 for v3, chance 2.83); CEM starts from it, blended with 10% uniform (`--prior`). Balanced cost
+(`--goal-on mix`): the view's dims and the inventory's dims each sum to one unit.
+
+Chain (50 worlds, 400 steps), share of worlds reaching each stage:
+
+| | wood | table | pickaxe / stone |
+|---|---|---|---|
+| random (400 steps, single achievement) | 50% | **14%** | 0% |
+| v2 hier (round 4) | 54% | 2% | 0% |
+| v2 hier + prior | **66%** | 4% | 0% |
+| v2 flat + prior | 34% | 4% | 0% |
+| v3 hier + snap + mix | 10% | 0% | 0% |
+| v3 hier + snap + mix + prior | 22% | 0% | 0% |
+
+The prior helps what players do often (wood: best yet, above random) and balancing partly rescues v3,
+but the table stays far below random. Random presses place_table ~23 times in 400 steps; the planner
+picks it only if the world model imagines it helping. Even when the prior proposes it, the planner
+declines, which points at the world model's prediction of rare actions. Next: check directly whether the
+model predicts a table appearing after place_table (frames just before recorded unlocks).
