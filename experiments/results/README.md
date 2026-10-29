@@ -339,3 +339,21 @@ strict: the agent gathers wood but rarely judges the table change reachable.
 steps, never running out of the 400-step budget. That is why 400 and 800 steps gave identical results:
 the agent has about 130 steps to craft. Survival, not planning, now caps the chain. Next: log health,
 food, drink and energy at death to find the cause (zombies, lava, thirst), then handle it.
+
+## What kills the agent (vitals at death, `CraftaxEnv.vitals`, code 15cba36)
+
+The two round 9 setups (travel before / after, reach 0.5) rerun with the player's state recorded at the
+end of each episode: 100 episodes, 100 deaths.
+
+| | zombie adjacent, health 0 | thirst / hunger / fatigue | lava | median length |
+|---|---|---|---|---|
+| travel before | 50 / 50 | 0 | 0 | 124 |
+| travel after | 49 / 50 | 1 | 0 | 151 |
+
+**Zombies kill the agent**: 99 of 100 deaths had health 0 with a zombie next to the player. No lava
+deaths. Thirst plays a part late (drink 0 in 11–12 of 50, mostly the longer episodes) but is almost never
+the cause. Deaths happen in daylight and at night alike (light < 0.5 in 20–25 of 50). Stage rates matched
+round 9 exactly (deterministic). The planner has no reason to avoid zombies: its only cost is the goal
+distance. Next: the survival cost (`--readout`, `--survival`, code dbd3f41), which penalizes imagined
+futures whose read-out health drops, so avoiding or fighting zombies comes from the world model's own
+predictions.
