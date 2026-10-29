@@ -44,8 +44,14 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] Long goals: flat vs hierarchical (K = 20: 13% vs 9%, n.s.; wood 6% → 32–54%)
 - [x] HUD encoder (inventory R² 0.997) and HUD-weighted cost: probes up, planning down
 - [x] Subgoal chain (`--chain`, fixed order): no crafting beyond 2% table
-- [ ] Crafting fixes: action prior learned from play (`jga train-prior`, `--prior`), view/inventory cost
-      balance (`--goal-on mix`); measure on the chain
+- [x] Crafting fixes: action prior, balanced cost, change goals, picture + change combined (`--goal-as both`)
+- [x] Correct recipe (given, from the game code: a table costs 2 wood): table 38% with `--travel before`
+      (random 14%), first wood pickaxe
+- [ ] Agent modules still missing (see [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md)):
+  - [ ] Body sense: readout heads latent → health, food, drink, energy
+  - [ ] Survival cost in the planner (every agent dies at ~130 steps today)
+  - [ ] Memory of trees, table, stone (moved up from phase 4)
+  - [ ] Recipe learned from the recorded games instead of given
 - [ ] Optional: LLM subgoals
 
 ## Phase 4: memory and its own goals
