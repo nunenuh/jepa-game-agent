@@ -316,3 +316,26 @@ placed a table** (32 of 32%), above random's 14% for the first time, and one wor
 tree) and returning to the table with the third wood (18% → 2%). 400 and 800 steps give identical
 results: most likely the agent dies (hunger, thirst, zombies) before step 400, to be checked by logging
 episode lengths. Fairness: this recipe is given; next it gets learned from the recorded games.
+
+## Phase 3 round 9: travel to the "before" picture; episode lengths (code 91d746a)
+
+Same given recipe, v2 hier + prior, `--goal-as both`, 50 worlds, 400 steps. `--travel before`: travel
+toward the mean of the frames just before each unlock (facing a tree; next to a table with wood) instead
+of just after.
+
+| | wood ×2 | table | wood ×1 | pickaxe | stone | episode length median (min–max) |
+|---|---|---|---|---|---|---|
+| random (single achievement) | — | 14% | — | 0% | 0% | |
+| travel after, reach 0.5 (round 8 rerun) | 32% | 32% | 18% | 2% | 0% | 151 (36–266) |
+| **travel before, reach 0.5** | **46%** | **38%** | 10% | 0% | 0% | 124 (37–323) |
+| travel before, reach 0.25 | 48% | 2% | 0% | 0% | 0% | 130 (37–323) |
+| travel before, reach 0.75 | 24% | 24% | 6% | 0% | 0% | 134 (38–349) |
+
+The round 8 run reproduced exactly (same seeds, deterministic planner). Travelling to the "before" picture
+gets more worlds to 2 wood (32% → 46%) and the best table rate so far (38%, random 14%). Reach 0.25 is too
+strict: the agent gathers wood but rarely judges the table change reachable.
+
+**Every episode in every run ended with the player dying** (`done`, 200 of 200), at a median of 124–151
+steps, never running out of the 400-step budget. That is why 400 and 800 steps gave identical results:
+the agent has about 130 steps to craft. Survival, not planning, now caps the chain. Next: log health,
+food, drink and energy at death to find the cause (zombies, lava, thirst), then handle it.
