@@ -245,7 +245,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
-                         prior_mix=args.prior_mix, goal_as=args.goal_as)  # fmt: skip
+                         prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -261,10 +261,10 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             assert top_cfg is not None
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
-                                     goal_as=args.goal_as)  # fmt: skip
+                                     goal_as=args.goal_as, reach=args.reach)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
-    goal_fn = achievement_goal_pairs if args.goal_as == "change" else achievement_goal_frames
+    goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
     goals = {a: goal_fn(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
     if args.chain:  # one run per world, subgoals in the given order
         last = args.achievement[-1]
@@ -277,7 +277,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
-    config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as}
+    config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as, "reach": args.reach}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -529,9 +529,11 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--hud-weight", type=float, default=1.0, help="mix: the inventory's weight vs the view's")
     pa.add_argument("--prior", type=Path, default=None, help="action prior checkpoint (jga train-prior)")
     pa.add_argument(
-        "--goal-as", choices=("picture", "change"), default="picture",
-        help="change: goal = this latent + what unlocking changes (mean before -> after step in recorded games)",
+        "--goal-as", choices=("picture", "change", "both", "blend"), default="picture",
+        help="change: goal = this latent + what unlocking changes (mean before -> after step in recorded games); "
+        "both: travel by picture, do the change once reachable; blend: mean of picture and change goals",
     )  # fmt: skip
+    pa.add_argument("--reach", type=float, default=0.5, help="both: change counts as reachable within this share")
     pa.add_argument("--prior-mix", type=float, default=0.1, help="share of uniform blended into the prior")
     pa.add_argument(
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"

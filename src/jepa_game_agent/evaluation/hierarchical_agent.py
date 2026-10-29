@@ -35,8 +35,9 @@ class HierarchicalAgent(JepaAgent):
         prior: ActionPrior | None = None,
         prior_mix: float = 0.1,
         goal_as: str = "picture",
+        reach: float = 0.5,
     ) -> None:
-        super().__init__(model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as)
+        super().__init__(model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach)
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg
@@ -51,6 +52,10 @@ class HierarchicalAgent(JepaAgent):
     def act(self, frame: Frame) -> int:
         now = self._see(frame)
         assert self.goal is not None
+        change = self._change_plan(now)  # goal_as='both': a doable change beats walking on
+        if change is not None:
+            self._t = 0  # replan the route from wherever the change leaves us
+            return int(change[0])
         if self._t % self.top.cfg.stride == 0:
             _, sub = plan_chunks_to_goal(self.top, now, self.goal, self.top_cfg, self.weights)
             if self.bank is not None:

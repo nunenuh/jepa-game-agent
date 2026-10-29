@@ -142,3 +142,28 @@ def test_change_goal_asks_for_the_same_change_from_wherever_the_agent_is() -> No
         JepaAgent(exact_model(), cfg, goal_as="change", hud_rows=2)
     with pytest.raises(ValueError):
         agent.reset([env.set_agent(0, 0)])  # change goals need (2, H, W, C) pairs
+
+
+def test_both_goals_travel_by_picture_and_switch_to_the_change_when_it_is_reachable() -> None:
+    """Pair (0,0) -> (0,1): the picture is (0, 1), the change is "one step right"."""
+    env = make_env()
+    env.reset(seed=0)
+    pair = np.stack([env.set_agent(0, 0), env.set_agent(0, 1)])
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, goal_as="both", reach=0.5)
+    agent.reset([pair])
+    assert agent.goal is not None and agent.goal.tolist() == [0.0, 1.0]  # the picture goal
+    assert agent.act(env.set_agent(2, 1)) == 2  # one step right is possible here: do the change
+    assert agent.act(env.set_agent(3, 3)) in (1, 3)  # wall on the right: no change possible, travel to (0, 1)
+
+
+def test_blend_goal_is_the_mean_of_picture_and_change() -> None:
+    env = make_env()
+    env.reset(seed=0)
+    pair = np.stack([env.set_agent(0, 0), env.set_agent(0, 1)])
+    agent = JepaAgent(exact_model(), PlannerConfig(horizon=2, samples=8, elites=2, iterations=1), goal_as="blend")
+    agent.reset([pair])
+    agent.act(env.set_agent(2, 1))
+    assert agent.goal is not None and agent.goal.tolist() == [1.0, 1.5]  # ((0, 1) + (2, 2)) / 2
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), PlannerConfig(), goal_as="both", reach=0.0)

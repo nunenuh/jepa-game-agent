@@ -106,3 +106,16 @@ def test_hierarchical_weights_reach_both_levels() -> None:
     agent.reset([env.set_agent(3, 3)])
     assert agent.act(env.set_agent(0, 0)) == 2
     assert agent.subgoal is not None and agent.subgoal[1] >= 2  # the top heads for the goal column
+
+
+def test_hierarchical_agent_switches_to_a_reachable_change() -> None:
+    import numpy as np
+
+    env = make_env()
+    env.reset(seed=0)
+    pair = np.stack([env.set_agent(0, 0), env.set_agent(0, 1)])
+    agent = HierarchicalAgent(exact_model(), exact_top(), TOP, BOTTOM, goal_as="both")
+    agent.reset([pair])
+    assert agent.act(env.set_agent(2, 1)) == 2
+    agent.reset([pair])
+    assert agent.act(env.set_agent(3, 3)) in (1, 3)
