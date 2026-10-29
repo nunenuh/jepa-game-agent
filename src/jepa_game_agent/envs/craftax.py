@@ -57,6 +57,11 @@ class CraftaxEnv:
         inv = [int(getattr(st.inventory, f.name)) for f in dataclasses.fields(st.inventory)]
         return (*(int(x) for x in np.asarray(st.player_position)), int(st.player_direction), *inv)
 
+    def inventory(self) -> dict[str, int]:
+        """Item counts (wood, stone, ..., tools), e.g. to check a table's 2 wood."""
+        inv = self._state.inventory
+        return {f.name: int(getattr(inv, f.name)) for f in dataclasses.fields(inv)}
+
     @property
     def state(self) -> Any:
         """The full Craftax state (map, player, inventory, ...), e.g. to stage impossible events."""

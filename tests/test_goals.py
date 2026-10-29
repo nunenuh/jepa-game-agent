@@ -153,3 +153,27 @@ def test_cli_plan_achievement_with_change_goals(tmp_path: Path, goal_as: str) ->
           "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
     res = json.loads(out.read_text())
     assert res["config"]["goal_as"] == goal_as and res["config"]["reach"] == 0.3 and res["chain"]["jepa"]["tasks"] == 2
+
+
+def test_parse_stage() -> None:
+    from jepa_game_agent.cli import parse_stage
+
+    assert parse_stage("place_table") == ("place_table", None, 0)
+    assert parse_stage("collect_wood:2") == ("collect_wood", "wood", 2)
+    with pytest.raises(ValueError):
+        parse_stage("place_table:2")  # only collect_* achievements have an item to count
+    with pytest.raises(ValueError):
+        parse_stage("collect_wood:0")
+
+
+def test_cli_count_stages_need_an_env_with_an_inventory(tmp_path: Path) -> None:
+    from jepa_game_agent.cli import main
+
+    data, wm = tmp_path / "eps.npz", tmp_path / "wm.pt"
+    main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    with pytest.raises(ValueError):
+        main(["plan-achievement", "--chain", "--checkpoint", str(wm), "--goal-data", str(data),
+              "--achievement", "collect_item:2", "--resets", "1", "--budget", "2",
+              "--out", str(tmp_path / "a.json")])  # fmt: skip

@@ -51,3 +51,5 @@ def test_craftax_env() -> None:
     assert env.frame_shape == (63, 63, 3) and env.num_actions == 17
     result = env.step(0)
     assert result.frame.dtype == np.uint8 and len(result.info) == 22
+    inv = env.inventory()  # type: ignore[attr-defined]
+    assert len(inv) == 12 and inv["wood"] == 0 and all(isinstance(v, int) for v in inv.values())

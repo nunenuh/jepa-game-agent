@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, TypeVar
 
 from jepa_game_agent.envs.base import Frame, GameEnv
@@ -94,50 +95,83 @@ def evaluate_achievement(
     }
 
 
+@dataclass(frozen=True)
+class ChainStage:
+    """One subgoal of a chain, given as its goal frames. Done when the achievement `name` unlocks, or, with an
+    item, when the inventory holds at least `count` of it (e.g. a table needs 2 wood: collect_wood, wood, 2)."""
+
+    name: str
+    frames: Sequence[Frame]
+    item: str | None = None
+    count: int = 0
+
+    @property
+    def label(self) -> str:
+        return self.name if self.item is None else f"{self.name}:{self.count}"
+
+
+def _stage_done(
+    st: ChainStage, got: Sequence[str], env: GameEnv, counts: Callable[[GameEnv], Mapping[str, int]] | None
+) -> bool:
+    if st.item is None:
+        return st.name in got
+    assert counts is not None
+    return counts(env).get(st.item, 0) >= st.count
+
+
 def evaluate_chain(
     make_env: Callable[[], GameEnv],
     tasks: Sequence[AchievementTask],
     make_agent: Callable[[AchievementTask], Agent],
-    chain: Sequence[tuple[str, Sequence[Frame]]],
+    chain: Sequence[ChainStage | tuple[str, Sequence[Frame]]],
+    counts: Callable[[GameEnv], Mapping[str, int]] | None = None,
 ) -> dict[str, Any]:
-    """Pursue the chain's achievements in order, each given as its goal frames; the agent is handed the next
-    subgoal not yet unlocked (one unlocked early is skipped). Success = the last one unlocked within the budget."""
-    if not chain:
+    """Pursue the chain's stages in order, each given as its goal frames; the agent is handed the first stage
+    not yet done (one already done when reached is skipped; done stays done). Success = every stage done
+    within the budget. counts(env) -> inventory, needed for stages that count items."""
+    stages = [c if isinstance(c, ChainStage) else ChainStage(*c) for c in chain]
+    if not stages:
         raise ValueError("empty chain")
-    names = [name for name, _ in chain]
-    successes, steps, reached = [], [], []
+    if counts is None and any(st.item is not None for st in stages):
+        raise ValueError("stages that count items need counts(env)")
+    labels = [st.label for st in stages]
+    successes, steps, reached, unlocked = [], [], [], []
     for task in tasks:
         env = make_env()
         frame = env.reset(task.seed)
         agent = make_agent(task)
         got: list[str] = []
         stage = 0
-        agent.reset(list(chain[0][1]))
+        agent.reset(list(stages[0].frames))
         hit = None
+
         for step in range(1, task.budget + 1):
             result = env.step(agent.act(frame))
             frame = result.frame
-            got += [a for a in result.achievements if a in names and a not in got]
-            if names[-1] in got:
+            got += [a for a in result.achievements if a not in got]
+            before = stage
+            while stage < len(stages) and _stage_done(stages[stage], got, env, counts):
+                stage += 1
+            if stage == len(stages):
                 hit = step
                 break
-            nxt = next(i for i, n in enumerate(names) if n not in got)
-            if nxt != stage:
-                stage = nxt
-                agent.reset(list(chain[stage][1]))
+            if stage != before:
+                agent.reset(list(stages[stage].frames))
             if result.done:
                 break
         successes.append(hit is not None)
         steps.append(hit)
-        reached.append(got)
+        reached.append(labels[:stage])
+        unlocked.append(got)
     n = len(tasks)
     return {
         "family": "chain",
-        "chain": names,
+        "chain": labels,
         "tasks": n,
         "success_rate": sum(successes) / n if n else 0.0,
         "successes": successes,
         "steps_to_success": steps,
         "reached": reached,
-        "stage_rates": {name: sum(name in g for g in reached) / n if n else 0.0 for name in names},
+        "unlocked": unlocked,
+        "stage_rates": {lb: sum(lb in r for r in reached) / n if n else 0.0 for lb in labels},
     }

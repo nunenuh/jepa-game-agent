@@ -14,6 +14,7 @@ from jepa_game_agent.evaluation import (
     evaluate_reach,
     make_reach_tasks,
 )
+from jepa_game_agent.evaluation.runner import ChainStage
 
 
 def make_env() -> GridWorld:
@@ -156,7 +157,8 @@ def test_chain_moves_to_the_next_subgoal_and_skips_ones_already_unlocked() -> No
     res = evaluate_chain(lambda: env, [AchievementTask("c", seed=0, budget=10)], lambda t: log, chain)
     assert log.goals == [0, 2]  # chased a, then c; never b (already had it)
     assert res["successes"] == [True] and res["steps_to_success"] == [6]
-    assert res["reached"] == [["b", "a", "c"]] and res["stage_rates"] == {"a": 1.0, "b": 1.0, "c": 1.0}
+    assert res["reached"] == [["a", "b", "c"]] and res["unlocked"] == [["b", "a", "c"]]
+    assert res["stage_rates"] == {"a": 1.0, "b": 1.0, "c": 1.0}
 
 
 def test_chain_reports_how_far_each_world_got() -> None:
@@ -166,3 +168,51 @@ def test_chain_reports_how_far_each_world_got() -> None:
     res = evaluate_chain(lambda: env, tasks, lambda t: _GoalLog(), chain)
     assert res["successes"] == [False, False] and res["success_rate"] == 0.0
     assert res["stage_rates"] == {"a": 1.0, "b": 0.0}
+
+
+class _InventoryEnv(_ScriptedEnv):
+    """Also scripts the wood count per step: {step: wood}."""
+
+    def __init__(self, script: dict[int, tuple[str, ...]], wood: dict[int, int]) -> None:
+        super().__init__(script)
+        self.wood, self.now = wood, 0
+
+    def reset(self, seed: int) -> np.ndarray:
+        self.now = 0
+        return super().reset(seed)
+
+    def step(self, action: int) -> StepResult:
+        result = super().step(action)
+        self.now = self.wood.get(self.t, self.now)
+        return result
+
+    def inventory(self) -> dict[str, int]:
+        return {"wood": self.now}
+
+
+def test_count_stage_waits_for_enough_items() -> None:
+    """A table needs 2 wood: chase wood until there are 2, then the table (which uses them up)."""
+    wood_frames = [np.full((2, 2, 3), 0, np.uint8)]
+    chain = [
+        ChainStage("collect_wood", wood_frames, item="wood", count=2),
+        ChainStage("place_table", [wood_frames[0] + 1]),
+    ]
+    log = _GoalLog()
+    env = _InventoryEnv({1: ("collect_wood",), 5: ("place_table",)}, wood={1: 1, 3: 2, 5: 0})
+    res = evaluate_chain(lambda: env, [AchievementTask("place_table", seed=0, budget=10)], lambda t: log, chain,
+                         counts=lambda e: e.inventory())  # fmt: skip
+    assert log.goals == [0, 1]  # wood until step 3 (2 wood), not at the first wood (step 1)
+    assert res["successes"] == [True] and res["reached"] == [["collect_wood:2", "place_table"]]
+    assert res["stage_rates"] == {"collect_wood:2": 1.0, "place_table": 1.0}
+
+
+def test_count_stage_already_met_is_skipped_and_needs_counts() -> None:
+    frames = [np.zeros((2, 2, 3), np.uint8)]
+    chain = [ChainStage("collect_wood", frames, item="wood", count=1), ChainStage("place_table", [frames[0] + 1])]
+    env = _InventoryEnv({}, wood={1: 3})
+    log = _GoalLog()
+    evaluate_chain(lambda: env, [AchievementTask("place_table", seed=0, budget=2)], lambda t: log, chain,
+                   counts=lambda e: e.inventory())  # fmt: skip
+    assert log.goals == [0, 1]
+    with pytest.raises(ValueError):
+        evaluate_chain(lambda: env, [AchievementTask("place_table", seed=0, budget=2)], lambda t: log, chain)

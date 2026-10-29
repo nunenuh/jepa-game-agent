@@ -206,6 +206,16 @@ def _surprise(args: argparse.Namespace) -> None:
     print(json.dumps({k: res[k] for k in ("auc", "mean_normal", "mean_jump")}))
 
 
+def parse_stage(token: str) -> tuple[str, str | None, int]:
+    """'place_table' -> ('place_table', None, 0); 'collect_wood:2' -> ('collect_wood', 'wood', 2): have 2 wood."""
+    name, _, n = token.partition(":")
+    if not n:
+        return name, None, 0
+    if not name.startswith("collect_") or int(n) < 1:
+        raise ValueError(f"bad stage {token!r}: counts need a collect_<item> achievement and a count >= 1")
+    return name, name.removeprefix("collect_"), int(n)
+
+
 def goal_weights(cfg: ModelConfig, goal_on: str, hud_weight: float = 1.0) -> torch.Tensor | None:
     """Per-latent-dim goal-cost weights. all: None (every dim counts the same). hud: only the inventory dims.
     mix: the view's dims and the inventory's dims each sum to one unit (the inventory's times hud_weight),
@@ -265,12 +275,22 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
-    goals = {a: goal_fn(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
+    parsed = [parse_stage(a) for a in args.achievement]
+    if any(item is not None for _, item, _ in parsed) and not args.chain:
+        raise ValueError("item counts (collect_x:n) only work with --chain")
+    goals = {a: goal_fn(goal_eps, a, n=args.goal_frames, seed=args.seed) for a, _, _ in parsed}
     if args.chain:  # one run per world, subgoals in the given order
-        last = args.achievement[-1]
+        from jepa_game_agent.evaluation.runner import ChainStage
+
+        last = parsed[-1][0]
         tasks = [AchievementTask(last, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
-        chain = [(a, goals[a]) for a in args.achievement]
-        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain)
+        chain = [ChainStage(a, goals[a], item, n) for a, item, n in parsed]
+        counts = None
+        if any(st.item is not None for st in chain):
+            if not hasattr(env, "inventory"):
+                raise ValueError(f"{args.env} has no inventory to count items in")
+            counts = lambda e: e.inventory()  # noqa: E731
+        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts)
     for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
