@@ -34,16 +34,17 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [ ] Deferred (see [docs/DEFERRED.md](docs/DEFERRED.md)): vitals probes, open-loop `Recall@1`, harder surprise events
 - [ ] **Phase 2B considerations (if 1-vector blurs HUD/entities):**
   - [x] Inverse-dynamics auxiliary loss (facing R² -0.41 → 0.60; K=10 12% → 25%) $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
-  - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
+  - [x] Split HUD encoder (inventory R² 0.59 → 0.997; planning worse, see phase 3)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
-## Phase 3: hierarchy (in progress)
+## Phase 3: hierarchy (closed, partial; see [results](experiments/results/README.md))
 
 - [x] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) approved 2026-10-28
-
-- [ ] 2–3 level world model, top-down planning
-- [ ] Long goals: flat vs hierarchical (round 1: no gain on reach; wood 6% → 35%, see results)
-- [ ] Optional: LLM breaks goals into achievement subgoals
+- [x] 2-level world model (top: 4-step chunks), top-down planning, snapped subgoals
+- [x] Long goals: flat vs hierarchical (K = 20: 13% vs 9%, n.s.; wood 6% → 32–54%)
+- [x] HUD encoder (inventory R² 0.997) and HUD-weighted cost: probes up, planning down
+- [x] Subgoal chain (`--chain`, fixed order): no crafting beyond 2% table
+- [ ] Deferred: separate view/inventory cost weights, data-driven action priors, LLM subgoals
 
 ## Phase 4: memory and its own goals
 

@@ -173,4 +173,33 @@ Achievements (50 worlds, 200 steps), goal cost on the 32 HUD dims only (`--goal-
 
 The encoder now knows the inventory, but a HUD-only cost does not help the planner: it says nothing
 about where the tree is, so the cost stays flat until wood is already in hand (a sparse-reward problem
-inside the planner). Next: the same v3 model with whole-picture goals (`--goal-on all`).
+inside the planner).
+
+Same v3 model, whole-picture goals (`--goal-on all`, 200 steps): flat 0% wood, hier + snap 2% wood
+(v2 hier: 32%). **v3 plans worse than v2** although its probes are better: the 32 HUD dims (layer-normed,
+so as loud as the 96 map dims together) likely dominate the goal distance, and the view gets less room.
+
+## Phase 3 round 4: subgoal chain (`--chain`, code ad3194f)
+
+One run per world (50 worlds, 400 steps): the agent is handed the goal frames of the next achievement not
+yet unlocked, in the order wood → table → wood pickaxe → stone. Share of worlds reaching each stage:
+
+| | v3 flat | v3 hier + snap | v2 hier (round 1 top, s0) |
+|---|---|---|---|
+| collect_wood | 0% | 4% | **54%** |
+| place_table | 0% | 0% | 2% |
+| pickaxe / stone | 0% | 0% | 0% |
+
+The order alone does not carry the agent through the chain: of the 27 v2 worlds with wood, one placed a
+table. A "has a table" goal picture shows a table nearby; nothing in a latent distance says the way there
+is one rare action (place_table), so the planner never tries it. (No random baseline at 400 steps yet;
+random gets 48% wood in 200.)
+
+### Phase 3 conclusion
+
+- Hierarchy + snapping: best long reach (K = 20: 13% vs 9% flat, not significant); wood up to 32–54%.
+- Crafting (table onwards): 0–6% in every variant. Goal-picture planning cannot express "do the rare
+  action that makes X", with or without subgoal order or a better inventory encoder.
+- Kept: v2 (inverse dynamics) as the planning model; the chain runner and HUD encoder as tools.
+- Not tried (deferred): a planning cost that weights view and inventory separately, and action priors
+  learned from data (how often an action follows a state) to make rare crafting actions tryable.
