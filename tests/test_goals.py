@@ -57,8 +57,9 @@ def test_cli_plan_achievement_on_gridworld(tmp_path: Path, capsys: pytest.Captur
     capsys.readouterr()
     main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
           "--resets", "3", "--budget", "10", "--goal-frames", "4", "--horizon", "2", "--samples", "8", "--elites",
-          "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
+          "2", "--iterations", "1", "--hud-rows", "4", "--out", str(out)])  # fmt: skip
     res = json.loads(out.read_text())
     r = res["achievement"]["collect_item"]["jepa"]
     assert r["tasks"] == 3 and 0 <= r["success_rate"] <= 1 and res["config"]["goal_frames"] == 4
+    assert res["config"]["hud_rows"] == 4
     assert json.loads(capsys.readouterr().out) == {"collect_item": r["success_rate"]}

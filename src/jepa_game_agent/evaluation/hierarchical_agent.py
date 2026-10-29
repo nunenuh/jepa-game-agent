@@ -1,6 +1,9 @@
 """Two-level agent: every `stride` steps the top plans toward the goal and sets a subgoal one chunk ahead;
 in between, the bottom planner (the flat JepaAgent's) walks to that subgoal. A subgoal no closer to the goal
-than where the agent stands is no progress, so then the bottom heads for the goal itself."""
+than where the agent stands is no progress, so then the bottom heads for the goal itself.
+
+bank (M, D) of real latents (e.g. encoded training frames): each subgoal is snapped to its nearest bank latent,
+so the bottom walks toward something that really exists rather than an imagined blur."""
 
 from __future__ import annotations
 
@@ -25,9 +28,14 @@ class HierarchicalAgent(JepaAgent):
         top_cfg: PlannerConfig,
         bottom_cfg: PlannerConfig,
         device: str | torch.device = "cpu",
+        hud_rows: int = 0,
+        bank: torch.Tensor | None = None,
     ) -> None:
-        super().__init__(model, bottom_cfg, device)
+        super().__init__(model, bottom_cfg, device, hud_rows)
+        if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
+            raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg
+        self.bank = None if bank is None else bank.to(device)
         self.subgoal: torch.Tensor | None = None
         self.top_plans, self._t = 0, 0
 
@@ -36,11 +44,12 @@ class HierarchicalAgent(JepaAgent):
         self.subgoal, self.top_plans, self._t = None, 0, 0
 
     def act(self, frame: Frame) -> int:
-        if self.goal is None:
-            raise RuntimeError("call reset(goal_frames) before act")
-        now = self._encode([frame])[0]
+        now = self._see(frame)
+        assert self.goal is not None
         if self._t % self.top.cfg.stride == 0:
             _, sub = plan_chunks_to_goal(self.top, now, self.goal, self.top_cfg)
+            if self.bank is not None:
+                sub = self.bank[(self.bank - sub).pow(2).sum(-1).argmin()]
             progress = (sub - self.goal).norm() < (now - self.goal).norm()
             self.subgoal = sub if progress else self.goal
             self.top_plans += 1

@@ -82,3 +82,18 @@ def test_a_subgoal_that_makes_no_progress_is_skipped() -> None:
     frame = env.set_agent(3, 1)
     env.step(agent.act(frame))
     assert env.state_key() == (2, 1) and torch.equal(agent.subgoal, agent.goal)  # type: ignore[arg-type]
+
+
+def test_snapped_subgoals_are_real_latents_from_the_bank() -> None:
+    env = make_env()
+    env.reset(seed=0)
+    bank = torch.tensor([[0.0, 0.0], [1.0, 0.0], [2.0, 2.0]])  # the goal (3, 3) itself is not in it
+    agent = HierarchicalAgent(exact_model(), exact_top(), TOP, BOTTOM, bank=bank)
+    agent.reset([env.set_agent(3, 3)])
+    agent.act(env.set_agent(0, 0))
+    assert agent.subgoal is not None and torch.equal(agent.subgoal, torch.tensor([2.0, 2.0]))
+
+
+def test_bank_must_match_the_latent_size() -> None:
+    with pytest.raises(ValueError):
+        HierarchicalAgent(exact_model(), exact_top(), TOP, BOTTOM, bank=torch.zeros(3, 5))

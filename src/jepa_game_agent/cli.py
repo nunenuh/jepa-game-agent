@@ -111,6 +111,19 @@ def _baselines(args: argparse.Namespace) -> None:
     print(json.dumps(summary(results)))
 
 
+def _snap_bank(args: argparse.Namespace, model: WorldModel, device: str) -> torch.Tensor | None:
+    """Real latents to snap subgoals to: up to --snap-size encoded frames from the train split of --snap-data."""
+    if args.snap_data is None:
+        return None
+    from jepa_game_agent.training.top_trainer import encode_episodes
+
+    eps = [e for path in args.snap_data for e in load_episodes(path)]
+    eps = [e for e in eps if split_of(e.seed) == "train"] or eps  # tiny test sets may have no train split
+    z = torch.cat([torch.from_numpy(a) for a in encode_episodes(model, eps, device)])
+    keep = torch.randperm(len(z), generator=torch.Generator().manual_seed(args.seed))[: args.snap_size]
+    return z[keep]
+
+
 def _plan(args: argparse.Namespace) -> None:
     from jepa_game_agent.evaluation import Agent, JepaAgent, evaluate_reach, make_reach_tasks
     from jepa_game_agent.evaluation.baselines import git_commit
@@ -131,11 +144,12 @@ def _plan(args: argparse.Namespace) -> None:
 
         top, _ = load_top(args.top, device)
         top_cfg = PlannerConfig(args.top_horizon, args.samples, args.elites, args.iterations)
+        bank = _snap_bank(args, model, device)
         name = "hier"
 
         def make_agent() -> Agent:
             assert top_cfg is not None
-            return HierarchicalAgent(model, top, top_cfg, cfg, device)
+            return HierarchicalAgent(model, top, top_cfg, cfg, device, bank=bank)
 
     reach: dict[str, dict[str, object]] = {}
     for k in args.k:
@@ -150,6 +164,8 @@ def _plan(args: argparse.Namespace) -> None:
     config |= {"tasks": args.tasks, "seed": args.seed, "planner": dataclasses.asdict(cfg)}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
+        if args.snap_data is not None:
+            config |= {"snap": {"data": [str(p) for p in args.snap_data], "size": args.snap_size}}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"reach": reach, "config": config, "commit": git_commit()}, indent=1))
     print(json.dumps({k: r[name]["success_rate"] for k, r in reach.items()}))  # type: ignore[index]
@@ -202,7 +218,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     name = "jepa"
 
     def make_agent() -> Agent:
-        return JepaAgent(model, cfg, device)
+        return JepaAgent(model, cfg, device, hud_rows=args.hud_rows)
 
     top_cfg = None
     if args.top is not None:
@@ -211,11 +227,12 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
         top, _ = load_top(args.top, device)
         top_cfg = PlannerConfig(args.top_horizon, args.samples, args.elites, args.iterations)
+        bank = _snap_bank(args, model, device)
         name = "hier"
 
         def make_agent() -> Agent:
             assert top_cfg is not None
-            return HierarchicalAgent(model, top, top_cfg, cfg, device)
+            return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank)
 
     results: dict[str, dict[str, object]] = {}
     for ach in args.achievement:
@@ -224,9 +241,11 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals)}
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
-    config |= {"planner": dataclasses.asdict(cfg)}
+    config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
+        if args.snap_data is not None:
+            config |= {"snap": {"data": [str(p) for p in args.snap_data], "size": args.snap_size}}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps({"achievement": results, "config": config, "commit": git_commit()}, indent=1))
     print(json.dumps({a: r[name]["success_rate"] for a, r in results.items()}))  # type: ignore[index]
@@ -301,6 +320,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
     pl.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
     pl.add_argument("--top-horizon", type=int, default=5, help="top-level plan length, in chunks")
+    pl.add_argument("--snap-data", type=Path, nargs="+", default=None, help="games whose frames subgoals snap to")
+    pl.add_argument("--snap-size", type=int, default=50_000, help="latents kept for snapping")
     pl.add_argument("--out", type=Path, required=True)
     pl.set_defaults(func=_plan)
     pr = sub.add_parser("probe", help="linear probes: R² of each state-key field read off the latent")
@@ -347,6 +368,11 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--samples", type=int, default=PlannerConfig.samples)
     pa.add_argument("--elites", type=int, default=PlannerConfig.elites)
     pa.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pa.add_argument("--snap-data", type=Path, nargs="+", default=None, help="games whose frames subgoals snap to")
+    pa.add_argument("--snap-size", type=int, default=50_000, help="latents kept for snapping")
+    pa.add_argument(
+        "--hud-rows", type=int, default=0, help="goal = this view + goal frames' bottom rows (Craftax-Classic: 14)"
+    )
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p

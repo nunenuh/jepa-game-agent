@@ -142,8 +142,9 @@ def test_cli_plan_with_a_top_model_runs_the_hierarchical_agent(
     capsys.readouterr()
     main(["plan", "--checkpoint", str(wm), "--top", str(top), "--top-horizon", "2", "--data", str(data), "--k", "3",
           "--tasks", "4", "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1",
-          "--out", str(out)])  # fmt: skip
+          "--snap-data", str(data), "--snap-size", "50", "--out", str(out)])  # fmt: skip
     res = json.loads(out.read_text())
     assert res["reach"]["k=3"]["hier"]["tasks"] == 4 and res["config"]["top"] == str(top)
+    assert res["config"]["snap"] == {"data": [str(data)], "size": 50}
     assert res["config"]["top_planner"]["horizon"] == 2
     assert set(json.loads(capsys.readouterr().out)) == {"k=3"}

@@ -74,3 +74,25 @@ def test_act_needs_a_goal_and_returns_a_valid_action() -> None:
     with pytest.raises(ValueError):
         agent.reset([])
     assert np.array_equal(frame, env.render())  # the agent never changes the frame it sees
+
+
+def test_hud_goal_keeps_the_current_view_and_takes_only_the_goal_frames_bottom_rows() -> None:
+    env = make_env()
+    env.reset(seed=0)
+    goal = env.set_agent(3, 2)  # agent in the bottom grid row: the 4 bottom pixel rows play the "HUD"
+    agent = JepaAgent(exact_model(), PlannerConfig(horizon=2, samples=8, elites=2, iterations=1), hud_rows=CELL)
+    agent.reset([goal])
+    agent.act(env.set_agent(0, 0))
+    # composite = current map (agent at 0,0) + goal HUD (agent at 3,2): the encoder sees both, averages them
+    assert torch.allclose(agent.goal, torch.tensor([1.5, 1.0]))
+    agent.act(env.set_agent(1, 1))  # the goal follows the current view every step
+    assert torch.allclose(agent.goal, torch.tensor([2.0, 1.5]))
+
+
+def test_hud_rows_must_fit_the_frame() -> None:
+    env = make_env()
+    frame = env.reset(seed=0)
+    agent = JepaAgent(exact_model(), PlannerConfig(horizon=2, samples=8, elites=2, iterations=1), hud_rows=99)
+    agent.reset([frame])
+    with pytest.raises(ValueError):
+        agent.act(frame)
