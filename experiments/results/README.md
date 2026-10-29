@@ -271,3 +271,27 @@ the right spot, but far from a tree "one step more wood-like" points nowhere, so
 travelling (wood 66% → 4%). A picture goal gets the agent there but is the wrong target for the final
 action. Next: use both, the picture goal to travel and the change goal for the action (e.g. a cost that
 adds the two, or switching to the change goal once it is reachable within the planning horizon).
+
+## Phase 3 round 7: picture + change goals combined (code e61348b)
+
+`--goal-as both`: each step, first plan for the change; play that plan if it gets within reach ×
+|change|² of it, otherwise travel toward the picture. `--goal-as blend`: one goal halfway between the two.
+All runs: v2, action prior, chain, 50 worlds, 400 steps.
+
+| | wood | table | pickaxe / stone |
+|---|---|---|---|
+| random | 50% | 14% | 0% |
+| hier, picture goal (round 5) | 66% | 4% | 0% |
+| hier, both, reach 0.25 | 66% | 4% | 0% |
+| hier, both, reach 0.5 | 62% | 6% | 0% |
+| hier, both, reach 0.75 | 56% | 0% | 0% |
+| hier, blend | 18% | 0% | 0% |
+| flat, both, reach 0.5 | 32% | 4% | 0% |
+
+Switching keeps travel intact but tables do not move. **Cause found in the game rules, not the agent:**
+in Craftax-Classic a table needs and costs 2 wood, and a wood pickaxe needs 1 more wood at a table
+(`craftax_classic/game_logic.py`: `place_block`, `wood >= 2`, `wood - 2`). The chain moves on to the
+table at the first wood (the collect_wood unlock), so in most worlds the table is impossible; the few
+tables come from worlds that picked up a second wood on the way. The recorded unlock moments used by the
+diagnostic always had enough wood, so the diagnostic could not see this. Random play keeps hitting trees
+and so gathers the 2 wood. Next: chain stages that count items (wood × 2 → table → wood × 1 → pickaxe).
