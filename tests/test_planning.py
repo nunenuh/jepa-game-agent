@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from jepa_game_agent.config import ModelConfig, PlannerConfig
@@ -77,3 +78,20 @@ def test_weights_make_the_planner_ignore_unweighted_latent_parts() -> None:
     assert torch.equal(seq[:3], torch.tensor([2, 2, 2]))  # only the second coordinate counts: go there first
     seq = plan_to_goal(wm, now, goal, cfg, weights=torch.tensor([1.0, 0.0]))
     assert torch.equal(seq[:3], torch.tensor([4, 4, 4]))
+
+
+def test_cem_init_lets_a_rare_sequence_be_found() -> None:
+    """Only [4, 4, 4] has low cost; 4 uniform samples almost never hit it, a prior on action 4 does."""
+    target = torch.tensor([4, 4, 4])
+    cfg = PlannerConfig(horizon=3, samples=4, elites=1, iterations=1, seed=0)
+    cost = lambda s: (s != target).float().sum(-1)  # noqa: E731
+    _, uniform_cost = categorical_cem(cost, num_actions=5, cfg=cfg)
+    init = torch.tensor([0.01, 0.01, 0.01, 0.01, 0.96])
+    seq, prior_cost = categorical_cem(cost, num_actions=5, cfg=cfg, init=init)
+    assert uniform_cost > 0 and prior_cost == 0.0 and torch.equal(seq, target)
+
+
+def test_cem_rejects_bad_init() -> None:
+    cfg = PlannerConfig(horizon=2, samples=8, elites=2, iterations=1)
+    with pytest.raises(ValueError):
+        categorical_cem(lambda s: torch.zeros(8), num_actions=3, cfg=cfg, init=torch.ones(4) / 4)

@@ -1,8 +1,11 @@
 # Plan
 
-The goal: a JEPA agent that lives inside a game world. It sees the screen,
+The goal: a JEPA agent that acts in the real world. It sees the screen,
 predicts what its actions will do in latent space, remembers where things
-are, picks goals, and acts, fast enough to watch it play live.
+are, picks goals, and acts, fast enough to watch it play live. Craftax is the
+training ground: cheap, fast, and with the same hard parts as real tasks
+(long chains of steps, rare decisive actions such as grasp or place). Phase 6
+moves the same agent to a robot-like world.
 
 It grows out of [jepa-playground](https://github.com/nunenuh/jepa-playground)
 experiment 09. Each phase below fixes one failure seen there, and each ends
@@ -115,6 +118,20 @@ with curiosity vs random exploration; survival time.
 **Measures:** actions per second; achievement rate of the fast policy vs
 the planner.
 
+### Phase 6: bridge to a real-world setting
+
+- Same planner, evaluation and agent loop, moved to a continuous robot-like
+  world: a robot-arm simulator (e.g. ManiSkill or Meta-World) or recorded
+  real-robot data (e.g. DROID).
+- Use a frozen pretrained video encoder (V-JEPA 2) instead of training one
+  from scratch on 63×63 frames; train only the action-conditioned predictor
+  on top (the V-JEPA 2-AC recipe), which fits Colab.
+- Continuous actions: CEM over action vectors (as in jepa-playground 09).
+
+**Measures:** reach and pick-and-place success from goal images vs random
+and vs a scripted baseline; what carries over from Craftax (action priors,
+hierarchy, surprise) and what does not.
+
 ## Compute budget (estimates)
 
 | Phase | Where | Time |
@@ -124,6 +141,7 @@ the planner.
 | 3 hierarchy | Colab A100 | about a day, in 3–6 h chunks |
 | 4 memory / curiosity | laptop + short Colab runs | hours |
 | 5 fast policy | Colab A100 | 3–6 h |
+| 6 real-world bridge | Colab A100 (frozen V-JEPA 2 features) | days, in 3–6 h chunks |
 
 ## Risks
 
@@ -139,5 +157,6 @@ the planner.
 
 ## Not realistic here
 
-Minecraft-scale 3D worlds and V-JEPA 2 / RoboJEPA-scale models need far
-more compute than Colab.
+Minecraft-scale 3D worlds, and training V-JEPA 2 / RoboJEPA-scale models from
+scratch, need far more compute than Colab. Using a frozen pretrained encoder
+and training only a small predictor on top (phase 6) does fit.

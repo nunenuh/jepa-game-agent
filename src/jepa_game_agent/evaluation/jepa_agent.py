@@ -9,6 +9,7 @@ import torch
 
 from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.envs.base import Frame
+from jepa_game_agent.models.prior import ActionPrior
 from jepa_game_agent.models.world_model import WorldModel
 from jepa_game_agent.planning.cem import plan_to_goal
 
@@ -20,6 +21,7 @@ class JepaAgent:
     hud_rows > 0: the goal is "this view, with the goal frames' bottom hud_rows pixel rows" (Craftax's inventory
     bar), rebuilt every step, so the goal asks for an inventory change instead of a remembered place.
     weights (D,): per-latent-dimension cost scale passed to the planner (None = all 1).
+    prior: action prior for the current latent, blended with uniform by prior_mix, where CEM starts sampling.
     """
 
     def __init__(
@@ -29,6 +31,8 @@ class JepaAgent:
         device: str | torch.device = "cpu",
         hud_rows: int = 0,
         weights: torch.Tensor | None = None,
+        prior: ActionPrior | None = None,
+        prior_mix: float = 0.1,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -36,6 +40,11 @@ class JepaAgent:
         self.goal: torch.Tensor | None = None
         self._goal_frames: np.ndarray | None = None
         self.weights = None if weights is None else weights.to(device)
+        self.prior = None if prior is None else prior.eval().to(device)
+        self.prior_mix = prior_mix
+
+    def _prior(self, now: torch.Tensor) -> torch.Tensor | None:
+        return None if self.prior is None else self.prior.probs(now, self.prior_mix)
 
     def _encode(self, frames: Sequence[Frame]) -> torch.Tensor:
         x = torch.from_numpy(np.stack(frames)).to(self.device).permute(0, 3, 1, 2).float() / 255
@@ -63,4 +72,4 @@ class JepaAgent:
     def act(self, frame: Frame) -> int:
         now = self._see(frame)
         assert self.goal is not None
-        return int(plan_to_goal(self.model, now, self.goal, self.cfg, self.weights)[0])
+        return int(plan_to_goal(self.model, now, self.goal, self.cfg, self.weights, self._prior(now))[0])

@@ -1,8 +1,9 @@
 # jepa-game-agent
 
-A JEPA agent that **lives inside a game world**: it sees the screen, predicts
-what its actions will do in latent space, remembers, picks its own goals, and
-acts. JEPA as the *player's mind*, not as a game generator.
+A JEPA agent, built toward **acting in the real world**: it sees the screen,
+predicts what its actions will do in latent space, remembers, picks its own
+goals, and acts. JEPA as the *agent's mind*, not as a game generator. Craftax
+is the training ground; a later phase moves the agent to a robot-like world.
 
 Spin-off of [jepa-playground](https://github.com/nunenuh/jepa-playground),
 where experiment 09 showed what a JEPA world model can and can't do yet:

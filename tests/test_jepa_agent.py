@@ -105,3 +105,21 @@ def test_weights_reach_the_planner() -> None:
     agent = JepaAgent(exact_model(), cfg, weights=torch.tensor([0.0, 1.0]))
     agent.reset([env.set_agent(3, 3)])
     assert agent.act(env.set_agent(0, 0)) == 2  # only the column counts: move right first
+
+
+def test_prior_seeds_the_planner() -> None:
+    """With one sample and one iteration, the planner plays whatever the prior proposes."""
+    from jepa_game_agent.models.prior import ActionPrior
+
+    class Right(ActionPrior):
+        def probs(self, z: torch.Tensor, mix: float = 0.0) -> torch.Tensor:
+            p = torch.full((*z.shape[:-1], 5), 1e-4)
+            p[..., 2] = 1.0
+            return p / p.sum(-1, keepdim=True)
+
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=3, samples=1, elites=1, iterations=1)
+    agent = JepaAgent(exact_model(), cfg, prior=Right(2, 5))
+    agent.reset([env.set_agent(3, 0)])  # goal is straight down; the prior says right
+    assert agent.act(env.set_agent(0, 0)) == 2

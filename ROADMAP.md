@@ -37,14 +37,16 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
   - [x] Split HUD encoder (inventory R² 0.59 → 0.997; planning worse, see phase 3)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
-## Phase 3: hierarchy (closed, partial; see [results](experiments/results/README.md))
+## Phase 3: hierarchy (reopened for crafting; see [results](experiments/results/README.md))
 
 - [x] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) approved 2026-10-28
 - [x] 2-level world model (top: 4-step chunks), top-down planning, snapped subgoals
 - [x] Long goals: flat vs hierarchical (K = 20: 13% vs 9%, n.s.; wood 6% → 32–54%)
 - [x] HUD encoder (inventory R² 0.997) and HUD-weighted cost: probes up, planning down
 - [x] Subgoal chain (`--chain`, fixed order): no crafting beyond 2% table
-- [ ] Deferred: separate view/inventory cost weights, data-driven action priors, LLM subgoals
+- [ ] Crafting fixes: action prior learned from play (`jga train-prior`, `--prior`), view/inventory cost
+      balance (`--goal-on mix`); measure on the chain
+- [ ] Optional: LLM subgoals
 
 ## Phase 4: memory and its own goals
 
@@ -55,3 +57,9 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 
 - [ ] Fast policy trained in imagination
 - [ ] Live laptop window: watch, give goals, teleport, see surprise
+
+## Phase 6: bridge to a real-world setting
+
+- [ ] Same planner and evaluation on a robot-arm simulator or real-robot data
+- [ ] Frozen pretrained V-JEPA 2 encoder + small action-conditioned predictor (V-JEPA 2-AC recipe)
+- [ ] Continuous-action CEM; what carries over from Craftax

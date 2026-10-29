@@ -13,14 +13,24 @@ CostFn = Callable[[torch.Tensor], torch.Tensor]  # (N, K) int action sequences -
 
 
 def categorical_cem(
-    cost_fn: CostFn, num_actions: int, cfg: PlannerConfig, device: str | torch.device = "cpu"
+    cost_fn: CostFn,
+    num_actions: int,
+    cfg: PlannerConfig,
+    device: str | torch.device = "cpu",
+    init: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, float]:
     """Keep one categorical distribution per step; sample, keep the cheapest, move the distribution to them.
 
+    init (A,): starting distribution for every step (default uniform), e.g. an action prior.
     Returns the cheapest sequence seen (K,) and its cost.
     """
     gen = torch.Generator(device=device).manual_seed(cfg.seed)
-    probs = torch.full((cfg.horizon, num_actions), 1.0 / num_actions, device=device)
+    if init is None:
+        probs = torch.full((cfg.horizon, num_actions), 1.0 / num_actions, device=device)
+    elif init.shape != (num_actions,):
+        raise ValueError(f"init must have shape ({num_actions},), got {tuple(init.shape)}")
+    else:
+        probs = init.to(device).float().expand(cfg.horizon, -1).clone()
     best_seq, best_cost = torch.zeros(cfg.horizon, dtype=torch.long, device=device), float("inf")
     for _ in range(cfg.iterations):
         seqs = torch.multinomial(probs, cfg.samples, replacement=True, generator=gen).T  # (N, K)
@@ -37,13 +47,19 @@ def categorical_cem(
 
 
 def plan_to_goal(
-    model: WorldModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig, weights: torch.Tensor | None = None
+    model: WorldModel,
+    now: torch.Tensor,
+    goal: torch.Tensor,
+    cfg: PlannerConfig,
+    weights: torch.Tensor | None = None,
+    prior: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Action sequence (K,) whose imagined latents get closest to the goal latent soonest. now, goal: (D,).
 
     Cost = distance to the goal summed over every imagined step (not only the last): agents play just the
     first action and plan again, so a plan that detours and comes back would waste that action.
     weights (D,): per-dimension cost scale, e.g. 0 on the view and 1 on the inventory part of a HUD latent.
+    prior (A,): where CEM starts sampling (default uniform), so actions players use here get tried first.
     """
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
@@ -51,5 +67,5 @@ def plan_to_goal(
         sq = (path - goal).pow(2)
         return (sq if weights is None else sq * weights).sum(-1).sum(-1)
 
-    seq, _ = categorical_cem(cost, model.cfg.num_actions, cfg, device=now.device)
+    seq, _ = categorical_cem(cost, model.cfg.num_actions, cfg, device=now.device, init=prior)
     return seq

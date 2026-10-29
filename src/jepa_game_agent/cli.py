@@ -205,6 +205,22 @@ def _surprise(args: argparse.Namespace) -> None:
     print(json.dumps({k: res[k] for k in ("auc", "mean_normal", "mean_jump")}))
 
 
+def goal_weights(cfg: ModelConfig, goal_on: str, hud_weight: float = 1.0) -> torch.Tensor | None:
+    """Per-latent-dim goal-cost weights. all: None (every dim counts the same). hud: only the inventory dims.
+    mix: the view's dims and the inventory's dims each sum to one unit (the inventory's times hud_weight),
+    so neither part drowns the other out whatever their sizes."""
+    if goal_on == "all":
+        return None
+    if not cfg.hud_rows:
+        raise ValueError(f"--goal-on {goal_on} needs a model trained with --hud-rows")
+    n_view, n_hud = cfg.latent_dim - cfg.hud_dim, cfg.hud_dim
+    if goal_on == "hud":
+        return torch.cat([torch.zeros(n_view), torch.ones(n_hud)])
+    if goal_on == "mix":
+        return torch.cat([torch.full((n_view,), 1.0 / n_view), torch.full((n_hud,), hud_weight / n_hud)])
+    raise ValueError(f"unknown goal_on {goal_on!r}")
+
+
 def _plan_achievement(args: argparse.Namespace) -> None:
     from jepa_game_agent.evaluation import AchievementTask, Agent, JepaAgent, evaluate_achievement, evaluate_chain
     from jepa_game_agent.evaluation.baselines import git_commit
@@ -219,15 +235,16 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     env = make_env(args.env, seed=args.seed)
     name = "jepa"
 
-    weights = None
-    if args.goal_on == "hud":  # score only the inventory part of the latent
-        if not model.cfg.hud_rows:
-            raise ValueError("--goal-on hud needs a model trained with --hud-rows")
-        weights = torch.zeros(model.cfg.latent_dim, device=device)
-        weights[-model.cfg.hud_dim :] = 1.0
+    weights = goal_weights(model.cfg, args.goal_on, args.hud_weight)
+    prior = None
+    if args.prior is not None:
+        from jepa_game_agent.training.prior_trainer import load_prior
+
+        prior, _ = load_prior(args.prior, device)
 
     def make_agent() -> Agent:
-        return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights)
+        return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
+                         prior_mix=args.prior_mix)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -241,9 +258,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
         def make_agent() -> Agent:
             assert top_cfg is not None
-            return HierarchicalAgent(
-                model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank, weights=weights
-            )
+            return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
+                                     weights=weights, prior=prior, prior_mix=args.prior_mix)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goals = {a: achievement_goal_frames(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
@@ -258,7 +274,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
-    config |= {"chain": args.chain}
+    config |= {"chain": args.chain, "hud_weight": args.hud_weight}
+    config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
         if args.snap_data is not None:
@@ -292,6 +309,24 @@ def _train_top(args: argparse.Namespace) -> None:
     print(
         json.dumps(summary | {"steps": history[-1]["step"] if history else 0, "last": history[-1] if history else None})
     )
+
+
+def _train_prior(args: argparse.Namespace) -> None:
+    from jepa_game_agent.models.prior import ActionPrior
+    from jepa_game_agent.training.prior_trainer import save_prior, train_prior
+    from jepa_game_agent.training.top_trainer import encode_episodes
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bottom, _ = load_checkpoint(args.bottom, device)
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    latents = encode_episodes(bottom, episodes, device)
+    prior = ActionPrior(bottom.cfg.latent_dim, bottom.cfg.num_actions)
+    history = train_prior(prior, latents, [e.actions for e in episodes], args.steps, args.batch_size,
+                          seed=args.seed, device=device)  # fmt: skip
+    save_prior(args.checkpoint, prior, history)
+    print(json.dumps({"split": args.split, "episodes": len(episodes), "last": history[-1]}))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -378,6 +413,15 @@ def build_parser() -> argparse.ArgumentParser:
     tt.add_argument("--seed", type=int, default=0)
     tt.add_argument("--checkpoint", type=Path, required=True)
     tt.set_defaults(func=_train_top)
+    tp = sub.add_parser("train-prior", help="learn which actions players press in a state (seeds the planner)")
+    tp.add_argument("--data", type=Path, nargs="+", required=True)
+    tp.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    tp.add_argument("--bottom", type=Path, required=True, help="trained world model checkpoint (frozen encoder)")
+    tp.add_argument("--steps", type=int, default=5_000)
+    tp.add_argument("--batch-size", type=int, default=512)
+    tp.add_argument("--seed", type=int, default=0)
+    tp.add_argument("--checkpoint", type=Path, required=True)
+    tp.set_defaults(func=_train_prior)
     pa = sub.add_parser("plan-achievement", help="pursue achievements, each given as its 'just unlocked' pictures")
     pa.add_argument("--checkpoint", type=Path, required=True)
     pa.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
@@ -399,7 +443,13 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument(
         "--hud-rows", type=int, default=0, help="goal = this view + goal frames' bottom rows (Craftax-Classic: 14)"
     )
-    pa.add_argument("--goal-on", choices=("all", "hud"), default="all", help="hud: score only the inventory latent")
+    pa.add_argument(
+        "--goal-on", choices=("all", "hud", "mix"), default="all",
+        help="hud: score only the inventory latent; mix: view and inventory weighted equally (see --hud-weight)",
+    )  # fmt: skip
+    pa.add_argument("--hud-weight", type=float, default=1.0, help="mix: the inventory's weight vs the view's")
+    pa.add_argument("--prior", type=Path, default=None, help="action prior checkpoint (jga train-prior)")
+    pa.add_argument("--prior-mix", type=float, default=0.1, help="share of uniform blended into the prior")
     pa.add_argument(
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"
     )

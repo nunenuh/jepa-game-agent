@@ -93,3 +93,39 @@ def test_cli_plan_achievement_chain(tmp_path: Path, capsys: pytest.CaptureFixtur
     r = res["chain"]["jepa"]
     assert r["tasks"] == 2 and r["chain"] == ["collect_item"] and res["config"]["chain"] is True
     assert json.loads(capsys.readouterr().out) == r["stage_rates"]
+
+
+def test_cli_train_prior_then_plan_with_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from jepa_game_agent.cli import main
+
+    data, wm, prior, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "prior.pt", tmp_path / "a.json"
+    main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    main(["train-prior", "--data", str(data), "--bottom", str(wm), "--steps", "5", "--batch-size", "8",
+          "--checkpoint", str(prior)])  # fmt: skip
+    assert prior.exists()
+    capsys.readouterr()
+    main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
+          "--prior", str(prior), "--prior-mix", "0.2", "--resets", "2", "--budget", "5", "--goal-frames", "2",
+          "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
+    cfg = json.loads(out.read_text())["config"]
+    assert cfg["prior"] == str(prior) and cfg["prior_mix"] == 0.2
+
+
+def test_goal_weights_balance_view_and_inventory() -> None:
+    """mix: the view's and the inventory's dims each add up to one unit (inventory times hud_weight)."""
+    import torch
+
+    from jepa_game_agent.cli import goal_weights
+    from jepa_game_agent.config import ModelConfig
+
+    cfg = ModelConfig(num_actions=5, latent_dim=16, hud_rows=4, hud_dim=4)
+    assert goal_weights(cfg, "all") is None
+    hud = goal_weights(cfg, "hud")
+    assert hud is not None and hud[:12].sum() == 0 and hud[12:].sum() == 4
+    mix = goal_weights(cfg, "mix", hud_weight=2.0)
+    assert mix is not None and torch.allclose(mix[:12].sum(), torch.tensor(1.0))
+    assert torch.allclose(mix[12:].sum(), torch.tensor(2.0))
+    with pytest.raises(ValueError):
+        goal_weights(ModelConfig(num_actions=5, latent_dim=16), "mix")
