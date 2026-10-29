@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from jepa_game_agent.data.episodes import Episode
-from jepa_game_agent.evaluation.goals import achievement_goal_frames, unlock_steps
+from jepa_game_agent.evaluation.goals import achievement_goal_frames, achievement_goal_pairs, unlock_steps
 
 
 def episode(rewards: list[float], achievements: tuple[str, ...]) -> Episode:
@@ -129,3 +129,26 @@ def test_goal_weights_balance_view_and_inventory() -> None:
     assert torch.allclose(mix[12:].sum(), torch.tensor(2.0))
     with pytest.raises(ValueError):
         goal_weights(ModelConfig(num_actions=5, latent_dim=16), "mix")
+
+
+def test_goal_pairs_are_the_frames_before_and_after_the_unlock() -> None:
+    eps = [episode([0, 1.0, 0], ("collect_wood",)), episode([1.0, 0, 1.0], ("collect_wood", "place_table"))]
+    pairs = achievement_goal_pairs(eps, "collect_wood", n=10, seed=0)
+    assert all(p.shape == (2, 2, 2, 3) for p in pairs)
+    assert sorted((int(p[0, 0, 0, 0]), int(p[1, 0, 0, 0])) for p in pairs) == [(0, 1), (1, 2)]
+    with pytest.raises(ValueError):
+        achievement_goal_pairs(eps, "collect_diamond")
+
+
+def test_cli_plan_achievement_with_change_goals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from jepa_game_agent.cli import main
+
+    data, wm, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "a.json"
+    main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    main(["plan-achievement", "--goal-as", "change", "--checkpoint", str(wm), "--goal-data", str(data),
+          "--achievement", "collect_item", "--chain", "--resets", "2", "--budget", "5", "--goal-frames", "2",
+          "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
+    res = json.loads(out.read_text())
+    assert res["config"]["goal_as"] == "change" and res["chain"]["jepa"]["tasks"] == 2

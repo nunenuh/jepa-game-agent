@@ -225,7 +225,7 @@ def goal_weights(cfg: ModelConfig, goal_on: str, hud_weight: float = 1.0) -> tor
 def _plan_achievement(args: argparse.Namespace) -> None:
     from jepa_game_agent.evaluation import AchievementTask, Agent, JepaAgent, evaluate_achievement, evaluate_chain
     from jepa_game_agent.evaluation.baselines import git_commit
-    from jepa_game_agent.evaluation.goals import achievement_goal_frames
+    from jepa_game_agent.evaluation.goals import achievement_goal_frames, achievement_goal_pairs
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
@@ -245,7 +245,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
-                         prior_mix=args.prior_mix)  # fmt: skip
+                         prior_mix=args.prior_mix, goal_as=args.goal_as)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -260,10 +260,12 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         def make_agent() -> Agent:
             assert top_cfg is not None
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
-                                     weights=weights, prior=prior, prior_mix=args.prior_mix)  # fmt: skip
+                                     weights=weights, prior=prior, prior_mix=args.prior_mix,
+                                     goal_as=args.goal_as)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
-    goals = {a: achievement_goal_frames(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
+    goal_fn = achievement_goal_pairs if args.goal_as == "change" else achievement_goal_frames
+    goals = {a: goal_fn(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
     if args.chain:  # one run per world, subgoals in the given order
         last = args.achievement[-1]
         tasks = [AchievementTask(last, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
@@ -275,7 +277,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
-    config |= {"chain": args.chain, "hud_weight": args.hud_weight}
+    config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -335,7 +337,7 @@ def _action_effects(args: argparse.Namespace) -> None:
 
     from jepa_game_agent.evaluation.action_effects import rank_actions
     from jepa_game_agent.evaluation.baselines import git_commit
-    from jepa_game_agent.evaluation.goals import achievement_goal_frames, unlock_steps
+    from jepa_game_agent.evaluation.goals import achievement_goal_frames, achievement_goal_pairs, unlock_steps
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
@@ -371,13 +373,19 @@ def _action_effects(args: argparse.Namespace) -> None:
                     continue
         if not trans:
             raise ValueError(f"no transition unlocks {name!r} in --data")
-        goal = enc(achievement_goal_frames(goal_eps, name, n=args.goal_frames, seed=args.seed)).mean(0)
+        if args.goal_as == "change":  # goal = this latent + the mean before -> after step of the goal games
+            pairs = achievement_goal_pairs(goal_eps, name, n=args.goal_frames, seed=args.seed)
+            delta = (enc([p[1] for p in pairs]) - enc([p[0] for p in pairs])).mean(0)
+            goal = enc([e.frames[t] for e, t in trans]) + delta
+        else:
+            goal = enc(achievement_goal_frames(goal_eps, name, n=args.goal_frames, seed=args.seed)).mean(0)
         results[name] = ranked(trans, goal)
     rng = np.random.default_rng(args.seed)
     pool = [(e, t) for e in eps for t in range(len(e.actions))]
     control = ranked([pool[i] for i in rng.choice(len(pool), size=min(args.control, len(pool)), replace=False)], None)
     config = {"checkpoint": str(args.checkpoint), "data": [str(p) for p in args.data], "split": args.split}
     config |= {"goal_split": args.goal_split, "goal_frames": args.goal_frames, "seed": args.seed}
+    config |= {"goal_as": args.goal_as}
     args.out.parent.mkdir(parents=True, exist_ok=True)
     out = {"achievement": results, "control": control, "config": config, "commit": git_commit()}
     args.out.write_text(json.dumps(out, indent=1))
@@ -489,6 +497,7 @@ def build_parser() -> argparse.ArgumentParser:
     fx.add_argument("--goal-frames", type=int, default=64)
     fx.add_argument("--achievement", nargs="+", required=True)
     fx.add_argument("--control", type=int, default=2000, help="random ordinary transitions for comparison")
+    fx.add_argument("--goal-as", choices=("picture", "change"), default="picture")
     fx.add_argument("--seed", type=int, default=0)
     fx.add_argument("--out", type=Path, required=True)
     fx.set_defaults(func=_action_effects)
@@ -519,6 +528,10 @@ def build_parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     pa.add_argument("--hud-weight", type=float, default=1.0, help="mix: the inventory's weight vs the view's")
     pa.add_argument("--prior", type=Path, default=None, help="action prior checkpoint (jga train-prior)")
+    pa.add_argument(
+        "--goal-as", choices=("picture", "change"), default="picture",
+        help="change: goal = this latent + what unlocking changes (mean before -> after step in recorded games)",
+    )  # fmt: skip
     pa.add_argument("--prior-mix", type=float, default=0.1, help="share of uniform blended into the prior")
     pa.add_argument(
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"

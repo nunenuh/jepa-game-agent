@@ -34,8 +34,9 @@ class HierarchicalAgent(JepaAgent):
         weights: torch.Tensor | None = None,
         prior: ActionPrior | None = None,
         prior_mix: float = 0.1,
+        goal_as: str = "picture",
     ) -> None:
-        super().__init__(model, bottom_cfg, device, hud_rows, weights, prior, prior_mix)
+        super().__init__(model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as)
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg

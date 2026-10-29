@@ -30,7 +30,7 @@ def rank_actions(
     actions: torch.Tensor,
     goal: torch.Tensor | None = None,
 ) -> dict[str, Any]:
-    """z_now, z_next (N, D), actions (N,) int, goal (D,) optional."""
+    """z_now, z_next (N, D), actions (N,) int, goal (D,) or one per transition (N, D), optional."""
     n, a = len(z_now), model.cfg.num_actions
     every = torch.arange(a, device=z_now.device).repeat(n).unsqueeze(1)  # (N*A, 1)
     pred = model.rollout(z_now.repeat_interleave(a, 0), every)[:, 0].reshape(n, a, -1)

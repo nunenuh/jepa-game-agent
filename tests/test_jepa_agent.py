@@ -123,3 +123,22 @@ def test_prior_seeds_the_planner() -> None:
     agent = JepaAgent(exact_model(), cfg, prior=Right(2, 5))
     agent.reset([env.set_agent(3, 0)])  # goal is straight down; the prior says right
     assert agent.act(env.set_agent(0, 0)) == 2
+
+
+def test_change_goal_asks_for_the_same_change_from_wherever_the_agent_is() -> None:
+    """Goal pairs (before, after) show one step right; from (2, 1) the goal is (2, 2): move right, not to (0, 1)."""
+    env = make_env()
+    env.reset(seed=0)
+    pair = np.stack([env.set_agent(0, 0), env.set_agent(0, 1)])
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, goal_as="change")
+    agent.reset([pair])
+    assert agent.act(env.set_agent(2, 1)) == 2
+    assert agent.goal is not None and agent.goal.tolist() == [2.0, 2.0]
+    assert JepaAgent(exact_model(), cfg).act is not None
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, goal_as="smell")
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, goal_as="change", hud_rows=2)
+    with pytest.raises(ValueError):
+        agent.reset([env.set_agent(0, 0)])  # change goals need (2, H, W, C) pairs

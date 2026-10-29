@@ -54,3 +54,26 @@ def test_cli_action_effects(tmp_path, capsys) -> None:  # type: ignore[no-untype
     assert res["control"]["n"] == 20 and res["control"]["goal_rank"] is None
     printed = json.loads(capsys.readouterr().out)
     assert set(printed) == {"collect_item", "control"}
+
+
+def test_goal_can_differ_per_transition() -> None:
+    z_now = torch.tensor([[0.0, 0.0], [5.0, 5.0]])
+    z_next = torch.tensor([[1.0, 0.0], [6.0, 5.0]])
+    goals = z_now + torch.tensor([1.0, 0.0])  # "one step down" from wherever each one is
+    res = rank_actions(model(), z_now, z_next, torch.tensor([4, 4]), goal=goals)
+    assert res["goal_rank"] == [1, 1]
+
+
+def test_cli_action_effects_with_change_goals(tmp_path, capsys) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    from jepa_game_agent.cli import main
+
+    data, wm, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "fx.json"
+    main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    main(["action-effects", "--goal-as", "change", "--checkpoint", str(wm), "--data", str(data), "--goal-data",
+          str(data), "--achievement", "collect_item", "--control", "5", "--out", str(out)])  # fmt: skip
+    res = json.loads(out.read_text())
+    assert res["config"]["goal_as"] == "change" and res["achievement"]["collect_item"]["goal_rank"] is not None

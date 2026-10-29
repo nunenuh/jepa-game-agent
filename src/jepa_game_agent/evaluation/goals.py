@@ -24,16 +24,26 @@ def unlock_steps(episode: Episode) -> dict[str, int]:
     return {name: steps[i] for i, name in enumerate(episode.achievements)}
 
 
-def achievement_goal_frames(episodes: Sequence[Episode], name: str, n: int = 64, seed: int = 0) -> list[Frame]:
-    """Up to n frames (from different episodes) right after `name` unlocked: what having it looks like."""
+def _unlocks(episodes: Sequence[Episode], name: str, n: int, seed: int) -> list[tuple[Episode, int]]:
+    """Up to n (episode, step) where `name` unlocked, from different episodes, picked at random with `seed`."""
     found = []
     for e in episodes:
         if name in e.achievements:
             try:
-                found.append(e.frames[unlock_steps(e)[name] + 1])
+                found.append((e, unlock_steps(e)[name]))
             except ValueError:  # unlock rewards don't add up (e.g. a deadly hit on the unlock step): skip
                 continue
     if not found:
         raise ValueError(f"no episode unlocks {name!r}")
     pick = np.random.default_rng(seed).permutation(len(found))[:n]
     return [found[i] for i in sorted(pick)]
+
+
+def achievement_goal_frames(episodes: Sequence[Episode], name: str, n: int = 64, seed: int = 0) -> list[Frame]:
+    """Up to n frames (from different episodes) right after `name` unlocked: what having it looks like."""
+    return [e.frames[t + 1] for e, t in _unlocks(episodes, name, n, seed)]
+
+
+def achievement_goal_pairs(episodes: Sequence[Episode], name: str, n: int = 64, seed: int = 0) -> list[Frame]:
+    """Up to n (2, H, W, C) pairs: the frames right before and right after `name` unlocked (what it changes)."""
+    return [np.stack([e.frames[t], e.frames[t + 1]]) for e, t in _unlocks(episodes, name, n, seed)]
