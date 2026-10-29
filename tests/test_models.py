@@ -94,3 +94,26 @@ def test_inverse_dynamics_learns_which_move_was_made(episodes, small_cfg: ModelC
     first = sum(h["inverse"] for h in hist[:5]) / 5
     last = sum(h["inverse"] for h in hist[-5:]) / 5
     assert last < 0.5 * first
+
+
+def test_hud_encoder_gives_the_bottom_rows_their_own_latent_part() -> None:
+    """hud_rows > 0: the last hud_dim latent dims see only the bottom hud_rows pixel rows, the rest only above."""
+    enc = Encoder(3, 32, hud_rows=7, hud_dim=8).eval()
+    frames = torch.rand(2, 3, 35, 35)
+    z = enc(frames)
+    assert z.shape == (2, 32)
+    hud_changed, map_changed = frames.clone(), frames.clone()
+    hud_changed[:, :, -7:] = torch.rand(2, 3, 7, 35)
+    map_changed[:, :, :-7] = torch.rand(2, 3, 28, 35)
+    zh, zm = enc(hud_changed), enc(map_changed)
+    assert torch.allclose(zh[:, :24], z[:, :24]) and not torch.allclose(zh[:, 24:], z[:, 24:])
+    assert torch.allclose(zm[:, 24:], z[:, 24:]) and not torch.allclose(zm[:, :24], z[:, :24])
+
+
+def test_hud_config_is_validated_and_off_by_default() -> None:
+    assert ModelConfig(num_actions=5).hud_rows == 0
+    wm = WorldModel(ModelConfig(num_actions=5, latent_dim=32, predictor_heads=4, hud_rows=7, hud_dim=8))
+    assert wm.encode(torch.rand(1, 3, 35, 35)).shape == (1, 32)
+    for bad in ({"hud_rows": -1}, {"hud_rows": 7, "hud_dim": 0}, {"hud_rows": 7, "hud_dim": 32}):
+        with pytest.raises(ValueError):
+            ModelConfig(num_actions=5, latent_dim=32, predictor_heads=4, **bad)  # type: ignore[arg-type]

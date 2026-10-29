@@ -30,8 +30,9 @@ class HierarchicalAgent(JepaAgent):
         device: str | torch.device = "cpu",
         hud_rows: int = 0,
         bank: torch.Tensor | None = None,
+        weights: torch.Tensor | None = None,
     ) -> None:
-        super().__init__(model, bottom_cfg, device, hud_rows)
+        super().__init__(model, bottom_cfg, device, hud_rows, weights)
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg
@@ -47,12 +48,13 @@ class HierarchicalAgent(JepaAgent):
         now = self._see(frame)
         assert self.goal is not None
         if self._t % self.top.cfg.stride == 0:
-            _, sub = plan_chunks_to_goal(self.top, now, self.goal, self.top_cfg)
+            _, sub = plan_chunks_to_goal(self.top, now, self.goal, self.top_cfg, self.weights)
             if self.bank is not None:
                 sub = self.bank[(self.bank - sub).pow(2).sum(-1).argmin()]
-            progress = (sub - self.goal).norm() < (now - self.goal).norm()
+            w = 1.0 if self.weights is None else self.weights
+            progress = ((sub - self.goal).pow(2) * w).sum() < ((now - self.goal).pow(2) * w).sum()
             self.subgoal = sub if progress else self.goal
             self.top_plans += 1
         self._t += 1
         assert self.subgoal is not None
-        return int(plan_to_goal(self.model, now, self.subgoal, self.cfg)[0])
+        return int(plan_to_goal(self.model, now, self.subgoal, self.cfg, self.weights)[0])

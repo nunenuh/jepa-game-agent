@@ -64,6 +64,8 @@ def _train(args: argparse.Namespace) -> None:
             channels=episodes[0].frames.shape[-1],
             context=max(args.window, 2),
             inverse_weight=args.inverse_weight,
+            hud_rows=args.hud_rows,
+            hud_dim=args.hud_dim,
         )
     )
     cfg = TrainConfig(
@@ -217,8 +219,15 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     env = make_env(args.env, seed=args.seed)
     name = "jepa"
 
+    weights = None
+    if args.goal_on == "hud":  # score only the inventory part of the latent
+        if not model.cfg.hud_rows:
+            raise ValueError("--goal-on hud needs a model trained with --hud-rows")
+        weights = torch.zeros(model.cfg.latent_dim, device=device)
+        weights[-model.cfg.hud_dim :] = 1.0
+
     def make_agent() -> Agent:
-        return JepaAgent(model, cfg, device, hud_rows=args.hud_rows)
+        return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights)
 
     top_cfg = None
     if args.top is not None:
@@ -232,7 +241,9 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
         def make_agent() -> Agent:
             assert top_cfg is not None
-            return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank)
+            return HierarchicalAgent(
+                model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank, weights=weights
+            )
 
     results: dict[str, dict[str, object]] = {}
     for ach in args.achievement:
@@ -241,7 +252,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals)}
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
-    config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows}
+    config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
         if args.snap_data is not None:
@@ -290,6 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--num-actions", type=int, required=True)
     t.add_argument("--latent-dim", type=int, default=128)
     t.add_argument("--inverse-weight", type=float, default=0.0, help="> 0 adds the inverse-dynamics loss")
+    t.add_argument(
+        "--hud-rows", type=int, default=0, help="bottom pixel rows with their own encoder (Craftax-Classic: 14)"
+    )
+    t.add_argument("--hud-dim", type=int, default=ModelConfig.hud_dim, help="latent dims for those rows")
     t.add_argument("--window", type=int, default=8)
     t.add_argument("--steps", type=int, default=1000)
     t.add_argument("--batch-size", type=int, default=64)
@@ -373,6 +388,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument(
         "--hud-rows", type=int, default=0, help="goal = this view + goal frames' bottom rows (Craftax-Classic: 14)"
     )
+    pa.add_argument("--goal-on", choices=("all", "hud"), default="all", help="hud: score only the inventory latent")
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p

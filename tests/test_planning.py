@@ -58,3 +58,22 @@ def test_plan_heads_for_the_goal_from_the_first_step() -> None:
     cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, seed=0)
     assert plan_to_goal(wm, torch.tensor([2.0, 2.0]), torch.tensor([2.0, 1.0]), cfg)[0].item() == 1  # LEFT
     assert plan_to_goal(wm, torch.tensor([2.0, 1.0]), torch.tensor([2.0, 1.0]), cfg)[0].item() == 0  # stay
+
+
+def test_weights_make_the_planner_ignore_unweighted_latent_parts() -> None:
+    """weights (D,) scale each latent dimension's cost: weight 0 means 'don't care where this ends up'."""
+    cfg_m = ModelConfig(num_actions=5, latent_dim=2, context=8, predictor_layers=1, predictor_heads=1)
+    wm = WorldModel(cfg_m).eval()
+    step = torch.tensor([[0.0, 0.0], [0.0, -1.0], [0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]])
+
+    class Exact(torch.nn.Module):
+        def forward(self, latents: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+            return latents + step[actions]
+
+    wm.predictor = Exact()  # type: ignore[assignment]
+    cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, seed=0)
+    now, goal = torch.tensor([0.0, 0.0]), torch.tensor([3.0, 3.0])
+    seq = plan_to_goal(wm, now, goal, cfg, weights=torch.tensor([0.0, 1.0]))
+    assert torch.equal(seq[:3], torch.tensor([2, 2, 2]))  # only the second coordinate counts: go there first
+    seq = plan_to_goal(wm, now, goal, cfg, weights=torch.tensor([1.0, 0.0]))
+    assert torch.equal(seq[:3], torch.tensor([4, 4, 4]))

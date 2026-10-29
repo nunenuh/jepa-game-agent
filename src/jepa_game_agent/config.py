@@ -22,6 +22,8 @@ class ModelConfig:
     predictor_heads: int = 4
     sigreg_weight: float = 0.09  # LeWM's Push-T setting
     inverse_weight: float = 0.0  # > 0 adds an inverse-dynamics head: guess a_t from (z_t, z_t+1)
+    hud_rows: int = 0  # > 0: the bottom hud_rows pixel rows (Craftax-Classic's inventory: 14) get their own encoder
+    hud_dim: int = 32  # ...whose output is the last hud_dim latent dims
 
     def __post_init__(self) -> None:
         for name in ("num_actions", "latent_dim", "channels", "context", "predictor_layers", "predictor_heads"):
@@ -32,6 +34,10 @@ class ModelConfig:
             raise ValueError("sigreg_weight must be >= 0")
         if self.inverse_weight < 0:
             raise ValueError("inverse_weight must be >= 0")
+        if self.hud_rows < 0:
+            raise ValueError("hud_rows must be >= 0")
+        if self.hud_rows and not 0 < self.hud_dim < self.latent_dim:
+            raise ValueError("hud_dim must be between 0 and latent_dim")
 
 
 @dataclass(frozen=True)

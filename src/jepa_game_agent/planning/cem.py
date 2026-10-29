@@ -36,16 +36,20 @@ def categorical_cem(
     return best_seq, best_cost
 
 
-def plan_to_goal(model: WorldModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig) -> torch.Tensor:
+def plan_to_goal(
+    model: WorldModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig, weights: torch.Tensor | None = None
+) -> torch.Tensor:
     """Action sequence (K,) whose imagined latents get closest to the goal latent soonest. now, goal: (D,).
 
     Cost = distance to the goal summed over every imagined step (not only the last): agents play just the
     first action and plan again, so a plan that detours and comes back would waste that action.
+    weights (D,): per-dimension cost scale, e.g. 0 on the view and 1 on the inventory part of a HUD latent.
     """
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
         path = model.rollout(now.expand(len(seqs), -1), seqs)  # (N, K, D)
-        return (path - goal).pow(2).sum(-1).sum(-1)
+        sq = (path - goal).pow(2)
+        return (sq if weights is None else sq * weights).sum(-1).sum(-1)
 
     seq, _ = categorical_cem(cost, model.cfg.num_actions, cfg, device=now.device)
     return seq

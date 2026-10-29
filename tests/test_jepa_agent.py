@@ -96,3 +96,12 @@ def test_hud_rows_must_fit_the_frame() -> None:
     agent.reset([frame])
     with pytest.raises(ValueError):
         agent.act(frame)
+
+
+def test_weights_reach_the_planner() -> None:
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, weights=torch.tensor([0.0, 1.0]))
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 2  # only the column counts: move right first

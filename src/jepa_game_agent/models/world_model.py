@@ -26,7 +26,7 @@ class WorldModel(nn.Module):
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        self.encoder = Encoder(cfg.channels, cfg.latent_dim)
+        self.encoder = Encoder(cfg.channels, cfg.latent_dim, cfg.hud_rows, cfg.hud_dim)
         self.predictor = Predictor(
             cfg.num_actions, cfg.latent_dim, cfg.context, cfg.predictor_layers, cfg.predictor_heads
         )

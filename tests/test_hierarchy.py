@@ -97,3 +97,12 @@ def test_snapped_subgoals_are_real_latents_from_the_bank() -> None:
 def test_bank_must_match_the_latent_size() -> None:
     with pytest.raises(ValueError):
         HierarchicalAgent(exact_model(), exact_top(), TOP, BOTTOM, bank=torch.zeros(3, 5))
+
+
+def test_hierarchical_weights_reach_both_levels() -> None:
+    env = make_env()
+    env.reset(seed=0)
+    agent = HierarchicalAgent(exact_model(), exact_top(), TOP, BOTTOM, weights=torch.tensor([0.0, 1.0]))
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 2
+    assert agent.subgoal is not None and agent.subgoal[1] >= 2  # the top heads for the goal column

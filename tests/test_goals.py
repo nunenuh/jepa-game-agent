@@ -53,13 +53,26 @@ def test_cli_plan_achievement_on_gridworld(tmp_path: Path, capsys: pytest.Captur
     data, wm, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "ach.json"
     main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
     main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "2",
-          "--batch-size", "8", "--checkpoint", str(wm)])  # fmt: skip
+          "--batch-size", "8", "--hud-rows", "4", "--hud-dim", "4", "--checkpoint", str(wm)])  # fmt: skip
     capsys.readouterr()
-    main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
+    main(["plan-achievement", "--goal-on", "hud", "--checkpoint", str(wm), "--goal-data", str(data),
+          "--achievement", "collect_item",
           "--resets", "3", "--budget", "10", "--goal-frames", "4", "--horizon", "2", "--samples", "8", "--elites",
           "2", "--iterations", "1", "--hud-rows", "4", "--out", str(out)])  # fmt: skip
     res = json.loads(out.read_text())
     r = res["achievement"]["collect_item"]["jepa"]
     assert r["tasks"] == 3 and 0 <= r["success_rate"] <= 1 and res["config"]["goal_frames"] == 4
-    assert res["config"]["hud_rows"] == 4
+    assert res["config"]["hud_rows"] == 4 and res["config"]["goal_on"] == "hud"
     assert json.loads(capsys.readouterr().out) == {"collect_item": r["success_rate"]}
+
+
+def test_cli_goal_on_hud_needs_a_hud_model(tmp_path: Path) -> None:
+    from jepa_game_agent.cli import main
+
+    data, wm = tmp_path / "eps.npz", tmp_path / "wm.pt"
+    main(["collect", "--episodes", "2", "--max-steps", "20", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    with pytest.raises(ValueError):
+        main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
+              "--goal-on", "hud", "--out", str(tmp_path / "a.json")])  # fmt: skip

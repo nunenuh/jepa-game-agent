@@ -19,16 +19,23 @@ class JepaAgent:
 
     hud_rows > 0: the goal is "this view, with the goal frames' bottom hud_rows pixel rows" (Craftax's inventory
     bar), rebuilt every step, so the goal asks for an inventory change instead of a remembered place.
+    weights (D,): per-latent-dimension cost scale passed to the planner (None = all 1).
     """
 
     def __init__(
-        self, model: WorldModel, cfg: PlannerConfig, device: str | torch.device = "cpu", hud_rows: int = 0
+        self,
+        model: WorldModel,
+        cfg: PlannerConfig,
+        device: str | torch.device = "cpu",
+        hud_rows: int = 0,
+        weights: torch.Tensor | None = None,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
         self.model, self.cfg, self.device, self.hud_rows = model.eval().to(device), cfg, device, hud_rows
         self.goal: torch.Tensor | None = None
         self._goal_frames: np.ndarray | None = None
+        self.weights = None if weights is None else weights.to(device)
 
     def _encode(self, frames: Sequence[Frame]) -> torch.Tensor:
         x = torch.from_numpy(np.stack(frames)).to(self.device).permute(0, 3, 1, 2).float() / 255
@@ -56,4 +63,4 @@ class JepaAgent:
     def act(self, frame: Frame) -> int:
         now = self._see(frame)
         assert self.goal is not None
-        return int(plan_to_goal(self.model, now, self.goal, self.cfg)[0])
+        return int(plan_to_goal(self.model, now, self.goal, self.cfg, self.weights)[0])

@@ -11,17 +11,19 @@ from jepa_game_agent.planning.cem import categorical_cem
 
 
 def plan_chunks_to_goal(
-    top: TopModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig
+    top: TopModel, now: torch.Tensor, goal: torch.Tensor, cfg: PlannerConfig, weights: torch.Tensor | None = None
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """cfg.horizon chunks of top.cfg.stride actions whose imagined path gets closest to the goal soonest.
 
     Returns the flat action sequence (horizon * stride,) and the subgoal: the latent after the first chunk (D,).
+    weights (D,): per-dimension cost scale, as in plan_to_goal.
     """
     stride = top.cfg.stride
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
         path = top.rollout(now.expand(len(seqs), -1), seqs.view(len(seqs), cfg.horizon, stride))
-        return (path - goal).pow(2).sum(-1).sum(-1)
+        sq = (path - goal).pow(2)
+        return (sq if weights is None else sq * weights).sum(-1).sum(-1)
 
     flat = PlannerConfig(cfg.horizon * stride, cfg.samples, cfg.elites, cfg.iterations, cfg.smoothing, cfg.seed)
     seq, _ = categorical_cem(cost, top.cfg.num_actions, flat, device=now.device)
