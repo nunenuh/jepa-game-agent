@@ -126,3 +126,30 @@ worse at K = 10), and no pickaxe or stone. The one consistent gain is collect_wo
 no real frame matches, and the averaged goal picture is mostly "some view", not "an inventory with X".
 Round 2: snap subgoals to real latents; goal pictures that keep the current view and change only the
 inventory bar.
+
+## Phase 3 round 2: snapped subgoals, inventory-bar goals (code 8310df9, top seed 0)
+
+Snap: each top subgoal replaced by its nearest of 50k encoded training frames (`--snap-data`).
+HUD goal: every step, goal = the current view with the goal frames' bottom 14 pixel rows (`--hud-rows 14`).
+
+Reach (same 100 tasks; McNemar vs flat on the same tasks):
+
+| K | flat | hier (round 1, s0) | hier + snap | p vs flat |
+|---|---|---|---|---|
+| 10 | 25% | 16% | 24% | 1.00 |
+| 20 | 9% | 7% | **13%** (95% CI 8–21%) | 0.45 |
+| 40 | 9% | 7% | 5% | 0.39 |
+
+Achievements (50 worlds, 200 steps):
+
+| | flat | hier (round 1, s0) | flat + HUD goal | hier + snap + HUD goal |
+|---|---|---|---|---|
+| collect_wood | 6% | 32% | 2% | 4% |
+| place_table | 0% | 0% | 0% | 0% |
+| pickaxe / stone | 0% | 0% | 0% | 0% |
+
+Snapping undoes round 1's loss at K = 10 and gives the best K = 20 so far, but not significantly above
+flat. The HUD goal hurts: with the view held fixed, the goal latent sits almost on top of the current
+one (the inventory bar is a small part of a pooled 4×4 latent), so the planner has nothing to chase.
+Conclusion: planning on one pooled vector cannot see inventory changes well enough; the next lever is
+the encoder (phase 2B: a separate HUD token), not the planner.
