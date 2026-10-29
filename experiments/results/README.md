@@ -226,3 +226,23 @@ but the table stays far below random. Random presses place_table ~23 times in 40
 picks it only if the world model imagines it helping. Even when the prior proposes it, the planner
 declines, which points at the world model's prediction of rare actions. Next: check directly whether the
 model predicts a table appearing after place_table (frames just before recorded unlocks).
+
+## Diagnostic: does the model know what crafting does? (`jga action-effects`, code b8888ad)
+
+Val-split transitions where a player unlocked each achievement; the model predicts one step ahead for all
+17 actions from z_t, and the action really taken is ranked (1 = best, 17 = worst). Next rank: closeness to
+the real z_t+1. Goal rank: closeness to the achievement's goal latent (what the planner chases).
+
+| | n | next rank v2 / v3 (top-1) | goal rank v2 / v3 (top-1) |
+|---|---|---|---|
+| collect_wood | 165 | 1.01 / 1.02 (99% / 99%) | 6.1 / 9.3 (0% / 0%) |
+| place_table | 144 | 1.10 / 1.37 (99% / 95%) | 5.2 / 3.3 (2% / 7%) |
+| make_wood_pickaxe | 136 | 1.02 / 1.03 (99% / 97%) | 7.9 / 5.0 (0% / 1%) |
+| collect_stone | 133 | 1.00 / 1.00 (100% / 100%) | 5.5 / 2.6 (0% / 20%) |
+| control (2,000 ordinary steps) | | 4.2 / 4.2 (54% / 54%) | — |
+
+The world model knows what crafting does: the true action is the best match for what really happened
+99% of the time, better than for ordinary moves (54%; many moves change little). But the same action is
+almost never the one that gets closest to the goal picture (top-1 0–7%, v3 stone 20%). The model is right;
+the goal is wrong. An averaged "just unlocked" picture is mostly "some other place", so walking somewhere
+beats pressing the craft button. Next: goals as a change instead of a picture.
