@@ -239,3 +239,12 @@ def test_chain_reports_episode_length_and_how_it_ended() -> None:
     assert won["lengths"] == [3] and won["ended"] == ["success"]
     out = evaluate_chain(lambda: _DyingEnv({}, death=99), tasks, lambda t: _GoalLog(), chain)
     assert out["lengths"] == [10] and out["ended"] == ["budget"]
+
+
+def test_chain_records_the_end_state_with_a_probe() -> None:
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b"))]
+    tasks = [AchievementTask("b", seed=0, budget=10)]
+    env = _DyingEnv({}, death=3)
+    res = evaluate_chain(lambda: env, tasks, lambda t: _GoalLog(), chain, probe=lambda e: {"t": e.t})
+    assert res["end_state"] == [{"t": 3}]
+    assert evaluate_chain(lambda: env, tasks, lambda t: _GoalLog(), chain)["end_state"] == [None]

@@ -125,17 +125,19 @@ def evaluate_chain(
     make_agent: Callable[[AchievementTask], Agent],
     chain: Sequence[ChainStage | tuple[str, Sequence[Frame]]],
     counts: Callable[[GameEnv], Mapping[str, int]] | None = None,
+    probe: Callable[[GameEnv], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Pursue the chain's stages in order, each given as its goal frames; the agent is handed the first stage
     not yet done (one already done when reached is skipped; done stays done). Success = every stage done
-    within the budget. counts(env) -> inventory, needed for stages that count items."""
+    within the budget. counts(env) -> inventory, needed for stages that count items. probe(env) -> what to
+    record about the world when each episode ends (e.g. vitals, to see what killed the player)."""
     stages = [c if isinstance(c, ChainStage) else ChainStage(*c) for c in chain]
     if not stages:
         raise ValueError("empty chain")
     if counts is None and any(st.item is not None for st in stages):
         raise ValueError("stages that count items need counts(env)")
     labels = [st.label for st in stages]
-    successes, steps, reached, unlocked, lengths, ended = [], [], [], [], [], []
+    successes, steps, reached, unlocked, lengths, ended, end_state = [], [], [], [], [], [], []
     for task in tasks:
         env = make_env()
         frame = env.reset(task.seed)
@@ -161,6 +163,7 @@ def evaluate_chain(
                 break
         lengths.append(step)
         ended.append(how)
+        end_state.append(None if probe is None else dict(probe(env)))
         successes.append(hit is not None)
         steps.append(hit)
         reached.append(labels[:stage])
@@ -177,5 +180,6 @@ def evaluate_chain(
         "unlocked": unlocked,
         "lengths": lengths,
         "ended": ended,
+        "end_state": end_state,
         "stage_rates": {lb: sum(lb in r for r in reached) / n if n else 0.0 for lb in labels},
     }

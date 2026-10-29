@@ -53,3 +53,6 @@ def test_craftax_env() -> None:
     assert result.frame.dtype == np.uint8 and len(result.info) == 22
     inv = env.inventory()  # type: ignore[attr-defined]
     assert len(inv) == 12 and inv["wood"] == 0 and all(isinstance(v, int) for v in inv.values())
+    vit = env.vitals()  # type: ignore[attr-defined]
+    assert vit["health"] == 9 and vit["in_lava"] is False and vit["zombies_near"] >= 0
+    assert {"food", "drink", "energy", "sleeping", "light", "zombies_alive"} <= set(vit)

@@ -62,6 +62,28 @@ class CraftaxEnv:
         inv = self._state.inventory
         return {f.name: int(getattr(inv, f.name)) for f in dataclasses.fields(inv)}
 
+    def vitals(self) -> dict[str, Any]:
+        """What keeps the player alive, and what may kill them: health, food, drink, energy, sleep, light,
+        standing in lava, and zombies alive / within one tile (diagonals included)."""
+        st = self._state
+        pos = np.asarray(st.player_position)
+        z = st.zombies
+        alive = np.asarray(z.mask).astype(bool)
+        dist = np.abs(np.asarray(z.position) - pos).max(-1)
+        from craftax.craftax_classic.constants import BlockType
+
+        return {
+            "health": int(st.player_health),
+            "food": int(st.player_food),
+            "drink": int(st.player_drink),
+            "energy": int(st.player_energy),
+            "sleeping": bool(st.is_sleeping),
+            "light": round(float(st.light_level), 3),
+            "in_lava": bool(int(np.asarray(st.map)[pos[0], pos[1]]) == BlockType.LAVA.value),
+            "zombies_alive": int(alive.sum()),
+            "zombies_near": int((alive & (dist <= 1)).sum()),
+        }
+
     @property
     def state(self) -> Any:
         """The full Craftax state (map, player, inventory, ...), e.g. to stage impossible events."""

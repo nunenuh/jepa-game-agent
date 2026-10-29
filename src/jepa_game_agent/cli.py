@@ -291,7 +291,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             if not hasattr(env, "inventory"):
                 raise ValueError(f"{args.env} has no inventory to count items in")
             counts = lambda e: e.inventory()  # noqa: E731
-        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts)
+        probe = (lambda e: e.vitals()) if hasattr(env, "vitals") else None  # what killed the player
+        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe)
     for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
