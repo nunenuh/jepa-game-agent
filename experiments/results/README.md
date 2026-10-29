@@ -295,3 +295,24 @@ table at the first wood (the collect_wood unlock), so in most worlds the table i
 tables come from worlds that picked up a second wood on the way. The recorded unlock moments used by the
 diagnostic always had enough wood, so the diagnostic could not see this. Random play keeps hitting trees
 and so gathers the 2 wood. Next: chain stages that count items (wood × 2 → table → wood × 1 → pickaxe).
+
+## Phase 3 round 8: correct recipe, GIVEN (read from the game code; code 346dd09)
+
+Recipe written by hand from `craftax_classic/game_logic.py`: wood × 2 → table (costs 2 wood) → wood × 1 →
+wood pickaxe (needs a table nearby) → stone. Counted stages read the real inventory (`collect_wood:2`).
+This is outside knowledge given to the agent, not learned. v2 + action prior, 50 worlds; share reaching
+each stage:
+
+| | wood ×2 | table | wood ×1 | pickaxe | stone |
+|---|---|---|---|---|---|
+| random (single achievement, 400 steps) | — | 14% | — | 0% | 0% |
+| hier, picture goal, 400 / 800 steps | 32% | 8% | 6% | 0% | 0% |
+| **hier, both (reach 0.5), 400 / 800 steps** | 32% | **32%** | 18% | **2%** | 0% |
+| flat, both (reach 0.5), 400 steps | 4% | 4% | 0% | 0% | 0% |
+
+With a correct recipe and picture-for-travel + change-for-action, **every world that gathered 2 wood
+placed a table** (32 of 32%), above random's 14% for the first time, and one world made a wood pickaxe
+(the first ever). Remaining walls: the second wood (32%: trees vanish when chopped, so it needs another
+tree) and returning to the table with the third wood (18% → 2%). 400 and 800 steps give identical
+results: most likely the agent dies (hunger, thirst, zombies) before step 400, to be checked by logging
+episode lengths. Fairness: this recipe is given; next it gets learned from the recorded games.
