@@ -246,3 +246,28 @@ The world model knows what crafting does: the true action is the best match for 
 almost never the one that gets closest to the goal picture (top-1 0–7%, v3 stone 20%). The model is right;
 the goal is wrong. An averaged "just unlocked" picture is mostly "some other place", so walking somewhere
 beats pressing the craft button. Next: goals as a change instead of a picture.
+
+## Phase 3 round 6: change goals (`--goal-as change`, code 6009cd7)
+
+Goal = the current latent + the mean before → after step of recorded unlocks (64 train-split pairs per
+achievement), rebuilt every step: "make the change that unlocking X makes".
+
+Diagnostic (`jga action-effects --goal-as change`, v2, same val transitions): the action really taken is
+the one closest to the goal for wood 97%, table **99%** (picture goal: 2%), pickaxe 99%, stone 84%.
+
+Chain (v2, 50 worlds, 400 steps):
+
+| | wood | table | pickaxe / stone |
+|---|---|---|---|
+| random | 50% | 14% | 0% |
+| hier + prior, picture goal (round 5) | 66% | 4% | 0% |
+| hier, change goal | 4% | 0% | 0% |
+| hier + prior, change goal | 6% | 0% | 0% |
+| flat, change goal | 4% | 0% | 0% |
+| flat + prior, change goal | 4% | 0% | 0% |
+
+The two goal types fail in mirror image. A change goal picks the right action once the agent stands at
+the right spot, but far from a tree "one step more wood-like" points nowhere, so the agent stops
+travelling (wood 66% → 4%). A picture goal gets the agent there but is the wrong target for the final
+action. Next: use both, the picture goal to travel and the change goal for the action (e.g. a cost that
+adds the two, or switching to the change goal once it is reachable within the planning horizon).
