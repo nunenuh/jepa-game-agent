@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 import torch
@@ -10,6 +10,7 @@ import torch
 from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.envs.base import Frame
 from jepa_game_agent.models.prior import ActionPrior
+from jepa_game_agent.models.readout import Readout
 from jepa_game_agent.models.world_model import WorldModel
 from jepa_game_agent.planning.cem import plan_to_goal
 
@@ -29,6 +30,8 @@ class JepaAgent:
     goal_as="blend": goal = the mean of the picture and the change goal (same as adding the two costs).
     travel: which picture both/blend travel to, "after" (how having it looks) or "before" (where the change
     starts, e.g. facing a tree with enough wood).
+    readout + survival: add survival * (health lost vs now, summed over the imagined path) to every plan's
+    cost, health read off the latents by `readout` (LeCun's built-in "pain" cost).
     """
 
     def __init__(
@@ -43,6 +46,8 @@ class JepaAgent:
         goal_as: str = "picture",
         reach: float = 0.5,
         travel: str = "after",
+        readout: Readout | None = None,
+        survival: float = 0.0,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -55,6 +60,10 @@ class JepaAgent:
         if travel not in ("after", "before"):
             raise ValueError(f"travel must be 'after' or 'before', got {travel!r}")
         self.travel = travel
+        if survival < 0 or (survival > 0 and readout is None):
+            raise ValueError("survival must be >= 0 and needs a readout")
+        self.readout = None if readout is None else readout.eval().to(device)
+        self.survival = survival
         self.goal_as, self.reach = goal_as, reach
         self._delta: torch.Tensor | None = None
         self._picture: torch.Tensor | None = None
@@ -110,6 +119,21 @@ class JepaAgent:
                 self.goal = (self._picture + self.change_goal) / 2
         return now
 
+    def _extra(self, now: torch.Tensor) -> Callable[[torch.Tensor], torch.Tensor] | None:
+        """Survival cost for plans from `now`: health lost along the imagined path (0 if it doesn't drop)."""
+        if self.readout is None or self.survival == 0:
+            return None
+        head, w = self.readout, self.survival
+        with torch.no_grad():
+            h_now = head(now)[0]
+
+        def cost(path: torch.Tensor) -> torch.Tensor:
+            with torch.no_grad():
+                lost: torch.Tensor = w * (h_now - head(path)[..., 0]).clamp(min=0).sum(-1)
+            return lost
+
+        return cost
+
     def _sq(self, x: torch.Tensor) -> torch.Tensor:
         return (x.pow(2) if self.weights is None else x.pow(2) * self.weights).sum(-1)
 
@@ -117,7 +141,9 @@ class JepaAgent:
         """goal_as='both': a plan for the change if it gets within reach * |change|^2 of it, else None."""
         if self.goal_as != "both" or self.change_goal is None or self._delta is None:
             return None
-        seq = plan_to_goal(self.model, now, self.change_goal, self.cfg, self.weights, self._prior(now))
+        seq = plan_to_goal(
+            self.model, now, self.change_goal, self.cfg, self.weights, self._prior(now), self._extra(now)
+        )
         with torch.no_grad():
             path = self.model.rollout(now.unsqueeze(0), seq.unsqueeze(0))[0]
         best = self._sq(path - self.change_goal).min()
@@ -129,4 +155,6 @@ class JepaAgent:
         change = self._change_plan(now)
         if change is not None:
             return int(change[0])
-        return int(plan_to_goal(self.model, now, self.goal, self.cfg, self.weights, self._prior(now))[0])
+        return int(
+            plan_to_goal(self.model, now, self.goal, self.cfg, self.weights, self._prior(now), self._extra(now))[0]
+        )

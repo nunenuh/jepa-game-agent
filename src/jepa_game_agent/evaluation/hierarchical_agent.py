@@ -15,6 +15,7 @@ from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.envs.base import Frame
 from jepa_game_agent.evaluation.jepa_agent import JepaAgent
 from jepa_game_agent.models.prior import ActionPrior
+from jepa_game_agent.models.readout import Readout
 from jepa_game_agent.models.top import TopModel
 from jepa_game_agent.models.world_model import WorldModel
 from jepa_game_agent.planning.cem import plan_to_goal
@@ -37,8 +38,12 @@ class HierarchicalAgent(JepaAgent):
         goal_as: str = "picture",
         reach: float = 0.5,
         travel: str = "after",
+        readout: Readout | None = None,
+        survival: float = 0.0,
     ) -> None:
-        super().__init__(model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel)
+        super().__init__(
+            model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel, readout, survival
+        )
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg
@@ -67,4 +72,6 @@ class HierarchicalAgent(JepaAgent):
             self.top_plans += 1
         self._t += 1
         assert self.subgoal is not None
-        return int(plan_to_goal(self.model, now, self.subgoal, self.cfg, self.weights, self._prior(now))[0])
+        return int(
+            plan_to_goal(self.model, now, self.subgoal, self.cfg, self.weights, self._prior(now), self._extra(now))[0]
+        )

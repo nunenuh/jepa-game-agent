@@ -9,7 +9,7 @@ import torch
 from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.models.world_model import WorldModel
 
-CostFn = Callable[[torch.Tensor], torch.Tensor]  # (N, K) int action sequences -> (N,) cost, lower is better
+CostFn = Callable[[torch.Tensor], torch.Tensor]  # (N, K) actions (or (N, K, D) paths) -> (N,) cost, lower is better
 
 
 def categorical_cem(
@@ -53,6 +53,7 @@ def plan_to_goal(
     cfg: PlannerConfig,
     weights: torch.Tensor | None = None,
     prior: torch.Tensor | None = None,
+    extra_cost: CostFn | None = None,
 ) -> torch.Tensor:
     """Action sequence (K,) whose imagined latents get closest to the goal latent soonest. now, goal: (D,).
 
@@ -60,12 +61,14 @@ def plan_to_goal(
     first action and plan again, so a plan that detours and comes back would waste that action.
     weights (D,): per-dimension cost scale, e.g. 0 on the view and 1 on the inventory part of a HUD latent.
     prior (A,): where CEM starts sampling (default uniform), so actions players use here get tried first.
+    extra_cost: (N, K, D) imagined paths -> (N,) added cost, e.g. a survival penalty on read-out health.
     """
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
         path = model.rollout(now.expand(len(seqs), -1), seqs)  # (N, K, D)
         sq = (path - goal).pow(2)
-        return (sq if weights is None else sq * weights).sum(-1).sum(-1)
+        c = (sq if weights is None else sq * weights).sum(-1).sum(-1)
+        return c if extra_cost is None else c + extra_cost(path)
 
     seq, _ = categorical_cem(cost, model.cfg.num_actions, cfg, device=now.device, init=prior)
     return seq

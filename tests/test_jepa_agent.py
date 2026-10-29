@@ -180,3 +180,22 @@ def test_both_can_travel_to_the_before_picture() -> None:
     assert agent.goal is not None and agent.goal.tolist() == [0.0, 0.0]
     with pytest.raises(ValueError):
         JepaAgent(exact_model(), cfg, goal_as="both", travel="sideways")
+
+
+def test_survival_cost_avoids_futures_that_lose_health() -> None:
+    """Read-out health falls as the row grows (going down hurts): the agent heads right to (0, 3) first."""
+    from jepa_game_agent.models.readout import Readout
+
+    class Hurts(Readout):
+        def forward(self, z: torch.Tensor) -> torch.Tensor:
+            health = 9 - 3 * z[..., 0]
+            return torch.stack([health, health * 0 + 9, health * 0 + 9, health * 0 + 9], -1)
+
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, readout=Hurts(2), survival=5.0)
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 2
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, survival=1.0)  # survival needs a readout

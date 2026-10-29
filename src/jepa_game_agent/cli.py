@@ -247,6 +247,11 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     name = "jepa"
 
     weights = goal_weights(model.cfg, args.goal_on, args.hud_weight)
+    readout = None
+    if args.readout is not None:
+        from jepa_game_agent.training.readout_trainer import load_readout
+
+        readout, _ = load_readout(args.readout, device)
     prior = None
     if args.prior is not None:
         from jepa_game_agent.training.prior_trainer import load_prior
@@ -256,7 +261,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
                          prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
-                         travel=args.travel)  # fmt: skip
+                         travel=args.travel, readout=readout, survival=args.survival)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -272,7 +277,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             assert top_cfg is not None
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
-                                     goal_as=args.goal_as, reach=args.reach, travel=args.travel)  # fmt: skip
+                                     goal_as=args.goal_as, reach=args.reach, travel=args.travel,
+                                     readout=readout, survival=args.survival)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -300,7 +306,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
     config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as, "reach": args.reach}
-    config |= {"travel": args.travel}
+    config |= {"travel": args.travel, "survival": args.survival}
+    config |= {"readout": None if args.readout is None else str(args.readout)}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -353,6 +360,41 @@ def _train_prior(args: argparse.Namespace) -> None:
                           seed=args.seed, device=device)  # fmt: skip
     save_prior(args.checkpoint, prior, history)
     print(json.dumps({"split": args.split, "episodes": len(episodes), "last": history[-1]}))
+
+
+def _train_readout(args: argparse.Namespace) -> None:
+    import numpy as np
+
+    from jepa_game_agent.models.readout import VITALS, Readout
+    from jepa_game_agent.training.readout_trainer import replay_vitals, save_readout, train_readout
+    from jepa_game_agent.training.top_trainer import encode_episodes
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bottom, _ = load_checkpoint(args.bottom, device)
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    rng = np.random.default_rng(args.seed)
+    episodes = [episodes[i] for i in sorted(rng.permutation(len(episodes))[: args.episodes])]
+    env = make_env(args.env, seed=args.seed)
+    if not hasattr(env, "vitals"):
+        raise ValueError(f"{args.env} has no vitals to read")
+    labels = [replay_vitals(env, e) for e in episodes]
+    latents = encode_episodes(bottom, episodes, device)
+    held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out for R^2
+    head = Readout(bottom.cfg.latent_dim)
+    fit = [i for i in range(len(episodes)) if not held[i]]
+    history = train_readout(head, [latents[i] for i in fit], [labels[i] for i in fit], args.steps, args.batch_size,
+                            seed=args.seed, device=device)  # fmt: skip
+    save_readout(args.checkpoint, head, history)
+    test = [i for i in range(len(episodes)) if held[i]] or fit
+    with torch.no_grad():
+        pred = head(torch.from_numpy(np.concatenate([latents[i] for i in test])).float().to(device)).cpu().numpy()
+    true = np.concatenate([labels[i] for i in test])
+    var = true.var(0)
+    r2 = {k: (None if var[j] == 0 else float(1 - ((pred[:, j] - true[:, j]) ** 2).mean() / var[j]))
+          for j, k in enumerate(VITALS)}  # fmt: skip
+    print(json.dumps({"episodes": len(episodes), "held_out": int(held.sum()), "r2": r2, "last": history[-1]}))
 
 
 def _action_effects(args: argparse.Namespace) -> None:
@@ -511,6 +553,17 @@ def build_parser() -> argparse.ArgumentParser:
     tp.add_argument("--seed", type=int, default=0)
     tp.add_argument("--checkpoint", type=Path, required=True)
     tp.set_defaults(func=_train_prior)
+    rd = sub.add_parser("train-readout", help="body sense: read health, food, drink, energy off the latent")
+    rd.add_argument("--data", type=Path, nargs="+", required=True)
+    rd.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    rd.add_argument("--bottom", type=Path, required=True, help="trained world model checkpoint (frozen encoder)")
+    rd.add_argument("--env", default="Craftax-Classic-Pixels-v1", help="env to replay the episodes in for labels")
+    rd.add_argument("--episodes", type=int, default=300, help="episodes replayed for labels (1 in 5 held out)")
+    rd.add_argument("--steps", type=int, default=5_000)
+    rd.add_argument("--batch-size", type=int, default=512)
+    rd.add_argument("--seed", type=int, default=0)
+    rd.add_argument("--checkpoint", type=Path, required=True)
+    rd.set_defaults(func=_train_readout)
     fx = sub.add_parser("action-effects", help="does the model know what an action does? rank the true action")
     fx.add_argument("--checkpoint", type=Path, required=True)
     fx.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games with the transitions")
@@ -557,6 +610,8 @@ def build_parser() -> argparse.ArgumentParser:
         "both: travel by picture, do the change once reachable; blend: mean of picture and change goals",
     )  # fmt: skip
     pa.add_argument("--reach", type=float, default=0.5, help="both: change counts as reachable within this share")
+    pa.add_argument("--readout", type=Path, default=None, help="vitals readout checkpoint (jga train-readout)")
+    pa.add_argument("--survival", type=float, default=0.0, help="weight of the cost on read-out health lost")
     pa.add_argument("--travel", choices=("after", "before"), default="after",
                     help="both/blend: travel to the after-unlock picture or to the before-unlock one")  # fmt: skip
     pa.add_argument("--prior-mix", type=float, default=0.1, help="share of uniform blended into the prior")

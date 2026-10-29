@@ -95,3 +95,20 @@ def test_cem_rejects_bad_init() -> None:
     cfg = PlannerConfig(horizon=2, samples=8, elites=2, iterations=1)
     with pytest.raises(ValueError):
         categorical_cem(lambda s: torch.zeros(8), num_actions=3, cfg=cfg, init=torch.ones(4) / 4)
+
+
+def test_extra_cost_steers_the_plan_away_from_danger() -> None:
+    """Goal (3, 3) from (0, 0); an extra cost on going down (dim 0) makes the plan go right first."""
+    cfg_m = ModelConfig(num_actions=5, latent_dim=2, context=8, predictor_layers=1, predictor_heads=1)
+    wm = WorldModel(cfg_m).eval()
+    step = torch.tensor([[0.0, 0.0], [0.0, -1.0], [0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]])
+
+    class Exact(torch.nn.Module):
+        def forward(self, latents: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+            return latents + step[actions]
+
+    wm.predictor = Exact()  # type: ignore[assignment]
+    cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, seed=0)
+    danger = lambda path: 10.0 * path[..., 0].clamp(min=0).sum(-1)  # noqa: E731
+    seq = plan_to_goal(wm, torch.tensor([0.0, 0.0]), torch.tensor([3.0, 3.0]), cfg, extra_cost=danger)
+    assert torch.equal(seq[:3], torch.tensor([2, 2, 2]))
