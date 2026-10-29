@@ -206,7 +206,7 @@ def _surprise(args: argparse.Namespace) -> None:
 
 
 def _plan_achievement(args: argparse.Namespace) -> None:
-    from jepa_game_agent.evaluation import AchievementTask, Agent, JepaAgent, evaluate_achievement
+    from jepa_game_agent.evaluation import AchievementTask, Agent, JepaAgent, evaluate_achievement, evaluate_chain
     from jepa_game_agent.evaluation.baselines import git_commit
     from jepa_game_agent.evaluation.goals import achievement_goal_frames
 
@@ -246,18 +246,29 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             )
 
     results: dict[str, dict[str, object]] = {}
-    for ach in args.achievement:
-        goals = achievement_goal_frames(goal_eps, ach, n=args.goal_frames, seed=args.seed)
+    goals = {a: achievement_goal_frames(goal_eps, a, n=args.goal_frames, seed=args.seed) for a in args.achievement}
+    if args.chain:  # one run per world, subgoals in the given order
+        last = args.achievement[-1]
+        tasks = [AchievementTask(last, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
+        chain = [(a, goals[a]) for a in args.achievement]
+        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain)
+    for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
-        results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals)}
+        results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
     config = {"env": args.env, "checkpoint": str(args.checkpoint), "achievements": list(args.achievement)}
     config |= {"resets": args.resets, "budget": args.budget, "goal_frames": args.goal_frames, "seed": args.seed}
     config |= {"planner": dataclasses.asdict(cfg), "hud_rows": args.hud_rows, "goal_on": args.goal_on}
+    config |= {"chain": args.chain}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
         if args.snap_data is not None:
             config |= {"snap": {"data": [str(p) for p in args.snap_data], "size": args.snap_size}}
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    if args.chain:
+        out = {"chain": {name: res}, "config": config, "commit": git_commit()}
+        args.out.write_text(json.dumps(out, indent=1))
+        print(json.dumps(res["stage_rates"]))
+        return
     args.out.write_text(json.dumps({"achievement": results, "config": config, "commit": git_commit()}, indent=1))
     print(json.dumps({a: r[name]["success_rate"] for a, r in results.items()}))  # type: ignore[index]
 
@@ -389,6 +400,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--hud-rows", type=int, default=0, help="goal = this view + goal frames' bottom rows (Craftax-Classic: 14)"
     )
     pa.add_argument("--goal-on", choices=("all", "hud"), default="all", help="hud: score only the inventory latent")
+    pa.add_argument(
+        "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"
+    )
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p

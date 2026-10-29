@@ -92,3 +92,52 @@ def evaluate_achievement(
         "successes": successes,
         "steps_to_success": steps,
     }
+
+
+def evaluate_chain(
+    make_env: Callable[[], GameEnv],
+    tasks: Sequence[AchievementTask],
+    make_agent: Callable[[AchievementTask], Agent],
+    chain: Sequence[tuple[str, Sequence[Frame]]],
+) -> dict[str, Any]:
+    """Pursue the chain's achievements in order, each given as its goal frames; the agent is handed the next
+    subgoal not yet unlocked (one unlocked early is skipped). Success = the last one unlocked within the budget."""
+    if not chain:
+        raise ValueError("empty chain")
+    names = [name for name, _ in chain]
+    successes, steps, reached = [], [], []
+    for task in tasks:
+        env = make_env()
+        frame = env.reset(task.seed)
+        agent = make_agent(task)
+        got: list[str] = []
+        stage = 0
+        agent.reset(list(chain[0][1]))
+        hit = None
+        for step in range(1, task.budget + 1):
+            result = env.step(agent.act(frame))
+            frame = result.frame
+            got += [a for a in result.achievements if a in names and a not in got]
+            if names[-1] in got:
+                hit = step
+                break
+            nxt = next(i for i, n in enumerate(names) if n not in got)
+            if nxt != stage:
+                stage = nxt
+                agent.reset(list(chain[stage][1]))
+            if result.done:
+                break
+        successes.append(hit is not None)
+        steps.append(hit)
+        reached.append(got)
+    n = len(tasks)
+    return {
+        "family": "chain",
+        "chain": names,
+        "tasks": n,
+        "success_rate": sum(successes) / n if n else 0.0,
+        "successes": successes,
+        "steps_to_success": steps,
+        "reached": reached,
+        "stage_rates": {name: sum(name in g for g in reached) / n if n else 0.0 for name in names},
+    }

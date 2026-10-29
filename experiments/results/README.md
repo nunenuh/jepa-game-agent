@@ -153,3 +153,24 @@ flat. The HUD goal hurts: with the view held fixed, the goal latent sits almost 
 one (the inventory bar is a small part of a pooled 4×4 latent), so the planner has nothing to chase.
 Conclusion: planning on one pooled vector cannot see inventory changes well enough; the next lever is
 the encoder (phase 2B: a separate HUD token), not the planner.
+
+## Phase 2B step 2 / phase 3 round 3: HUD encoder (code cf308bc)
+
+v3 world model: the bottom 14 pixel rows (inventory bar) get their own small CNN, written to the last 32
+of the 128 latent dims; otherwise as v2 (inverse weight 0.5, 30k steps). Final prediction 0.101,
+SIGReg 6.6, inverse CE 1.06. New top model on v3 latents (seed 0, final MSE 0.340).
+
+Probes (same protocol), v2 → v3: wood 0.59 → **0.997**, sapling 0.53 → **0.97**, facing 0.60 → 0.69,
+position x / y 0.28 / -0.05 → 0.32 / 0.05 (negative control, stays low).
+
+Achievements (50 worlds, 200 steps), goal cost on the 32 HUD dims only (`--goal-on hud`):
+
+| | random | v2 hier (round 1, s0) | v3 flat, HUD cost | v3 hier + snap, HUD cost |
+|---|---|---|---|---|
+| collect_wood | 48% | 32% | 0% | 16% |
+| place_table | 14% | 0% | 0% | 0% |
+| pickaxe / stone | 0% | 0% | 0% | 0% |
+
+The encoder now knows the inventory, but a HUD-only cost does not help the planner: it says nothing
+about where the tree is, so the cost stays flat until wood is already in hand (a sparse-reward problem
+inside the planner). Next: the same v3 model with whole-picture goals (`--goal-on all`).

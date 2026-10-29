@@ -76,3 +76,20 @@ def test_cli_goal_on_hud_needs_a_hud_model(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
               "--goal-on", "hud", "--out", str(tmp_path / "a.json")])  # fmt: skip
+
+
+def test_cli_plan_achievement_chain(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from jepa_game_agent.cli import main
+
+    data, wm, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "chain.json"
+    main(["collect", "--episodes", "6", "--max-steps", "60", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4", "--steps", "1",
+          "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
+    capsys.readouterr()
+    main(["plan-achievement", "--chain", "--checkpoint", str(wm), "--goal-data", str(data),
+          "--achievement", "collect_item", "--resets", "2", "--budget", "5", "--goal-frames", "2", "--horizon", "2",
+          "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
+    res = json.loads(out.read_text())
+    r = res["chain"]["jepa"]
+    assert r["tasks"] == 2 and r["chain"] == ["collect_item"] and res["config"]["chain"] is True
+    assert json.loads(capsys.readouterr().out) == r["stage_rates"]

@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from jepa_game_agent.data.episodes import Episode
+from jepa_game_agent.envs.base import StepResult
 from jepa_game_agent.envs.fake import GridWorld
 from jepa_game_agent.evaluation import (
     AchievementTask,
@@ -9,6 +10,7 @@ from jepa_game_agent.evaluation import (
     ReplayAgent,
     StillAgent,
     evaluate_achievement,
+    evaluate_chain,
     evaluate_reach,
     make_reach_tasks,
 )
@@ -116,3 +118,51 @@ def test_reach_tasks_skip_goals_past_the_end_of_the_game() -> None:
     )
     res = evaluate_reach(make_env, [past_end], lambda task: ReplayAgent(task.goal_actions))
     assert res["success_rate"] == 0.0  # why such tasks must be skipped
+
+
+class _ScriptedEnv:
+    """Unlocks achievements on fixed step numbers: {step: names}."""
+
+    num_actions = 1
+    frame_shape = (2, 2, 3)
+
+    def __init__(self, script: dict[int, tuple[str, ...]]) -> None:
+        self.script, self.t = script, 0
+
+    def reset(self, seed: int) -> np.ndarray:
+        self.t = 0
+        return np.zeros(self.frame_shape, np.uint8)
+
+    def step(self, action: int) -> StepResult:
+        self.t += 1
+        return StepResult(np.zeros(self.frame_shape, np.uint8), 0.0, False, achievements=self.script.get(self.t, ()))
+
+
+class _GoalLog:
+    def __init__(self) -> None:
+        self.goals: list[int] = []
+
+    def reset(self, goal_frames: list[np.ndarray]) -> None:
+        self.goals.append(int(goal_frames[0][0, 0, 0]))
+
+    def act(self, frame: np.ndarray) -> int:
+        return 0
+
+
+def test_chain_moves_to_the_next_subgoal_and_skips_ones_already_unlocked() -> None:
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b", "c"))]
+    log = _GoalLog()
+    env = _ScriptedEnv({2: ("b",), 3: ("a",), 6: ("c",)})  # b unlocks early, while chasing a
+    res = evaluate_chain(lambda: env, [AchievementTask("c", seed=0, budget=10)], lambda t: log, chain)
+    assert log.goals == [0, 2]  # chased a, then c; never b (already had it)
+    assert res["successes"] == [True] and res["steps_to_success"] == [6]
+    assert res["reached"] == [["b", "a", "c"]] and res["stage_rates"] == {"a": 1.0, "b": 1.0, "c": 1.0}
+
+
+def test_chain_reports_how_far_each_world_got() -> None:
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b"))]
+    tasks = [AchievementTask("b", seed=s, budget=5) for s in range(2)]
+    env = _ScriptedEnv({2: ("a",)})
+    res = evaluate_chain(lambda: env, tasks, lambda t: _GoalLog(), chain)
+    assert res["successes"] == [False, False] and res["success_rate"] == 0.0
+    assert res["stage_rates"] == {"a": 1.0, "b": 0.0}
