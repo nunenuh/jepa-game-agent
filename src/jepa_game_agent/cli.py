@@ -13,6 +13,7 @@ import torch
 
 from jepa_game_agent.config import ModelConfig, PlannerConfig, TrainConfig
 from jepa_game_agent.data.episodes import (
+    Episode,
     WindowDataset,
     collect_episode,
     data_card,
@@ -329,6 +330,63 @@ def _train_prior(args: argparse.Namespace) -> None:
     print(json.dumps({"split": args.split, "episodes": len(episodes), "last": history[-1]}))
 
 
+def _action_effects(args: argparse.Namespace) -> None:
+    import numpy as np
+
+    from jepa_game_agent.evaluation.action_effects import rank_actions
+    from jepa_game_agent.evaluation.baselines import git_commit
+    from jepa_game_agent.evaluation.goals import achievement_goal_frames, unlock_steps
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    model.eval()
+
+    def pick(eps: list[Episode], split: str) -> list[Episode]:
+        return eps if split == "all" else [e for e in eps if split_of(e.seed) == split]
+
+    eps = pick([e for path in args.data for e in load_episodes(path)], args.split)
+    goal_eps = pick([e for path in args.goal_data for e in load_episodes(path)], args.goal_split)
+
+    def enc(frames: list[np.ndarray]) -> torch.Tensor:
+        x = torch.from_numpy(np.stack(frames)).to(device).permute(0, 3, 1, 2).float() / 255
+        with torch.no_grad():
+            return model.encode(x)
+
+    def ranked(trans: list[tuple[Episode, int]], goal: torch.Tensor | None) -> dict[str, object]:
+        z_now = enc([e.frames[t] for e, t in trans])
+        z_next = enc([e.frames[t + 1] for e, t in trans])
+        acts = torch.tensor([int(e.actions[t]) for e, t in trans], device=device)
+        res = rank_actions(model, z_now, z_next, acts, goal)
+        counts = np.bincount(acts.cpu().numpy(), minlength=model.cfg.num_actions)
+        return res | {"actions": counts.tolist()}
+
+    results: dict[str, dict[str, object]] = {}
+    for name in args.achievement:
+        trans = []
+        for e in eps:
+            if name in e.achievements:
+                try:
+                    trans.append((e, unlock_steps(e)[name]))
+                except ValueError:  # unlock rewards don't add up: skip the episode
+                    continue
+        if not trans:
+            raise ValueError(f"no transition unlocks {name!r} in --data")
+        goal = enc(achievement_goal_frames(goal_eps, name, n=args.goal_frames, seed=args.seed)).mean(0)
+        results[name] = ranked(trans, goal)
+    rng = np.random.default_rng(args.seed)
+    pool = [(e, t) for e in eps for t in range(len(e.actions))]
+    control = ranked([pool[i] for i in rng.choice(len(pool), size=min(args.control, len(pool)), replace=False)], None)
+    config = {"checkpoint": str(args.checkpoint), "data": [str(p) for p in args.data], "split": args.split}
+    config |= {"goal_split": args.goal_split, "goal_frames": args.goal_frames, "seed": args.seed}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    out = {"achievement": results, "control": control, "config": config, "commit": git_commit()}
+    args.out.write_text(json.dumps(out, indent=1))
+    keys = ("n", "mean_next_rank", "next_top1", "mean_goal_rank", "goal_top1")
+    summary = {k: {f: r.get(f) for f in keys} for k, r in results.items()}
+    summary["control"] = {f: control.get(f) for f in keys[:3]}
+    print(json.dumps(summary))
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="jga", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -422,6 +480,18 @@ def build_parser() -> argparse.ArgumentParser:
     tp.add_argument("--seed", type=int, default=0)
     tp.add_argument("--checkpoint", type=Path, required=True)
     tp.set_defaults(func=_train_prior)
+    fx = sub.add_parser("action-effects", help="does the model know what an action does? rank the true action")
+    fx.add_argument("--checkpoint", type=Path, required=True)
+    fx.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games with the transitions")
+    fx.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    fx.add_argument("--goal-data", type=Path, nargs="+", required=True, help="recorded games to take goal frames from")
+    fx.add_argument("--goal-split", choices=("all", "train", "val", "test"), default="all")
+    fx.add_argument("--goal-frames", type=int, default=64)
+    fx.add_argument("--achievement", nargs="+", required=True)
+    fx.add_argument("--control", type=int, default=2000, help="random ordinary transitions for comparison")
+    fx.add_argument("--seed", type=int, default=0)
+    fx.add_argument("--out", type=Path, required=True)
+    fx.set_defaults(func=_action_effects)
     pa = sub.add_parser("plan-achievement", help="pursue achievements, each given as its 'just unlocked' pictures")
     pa.add_argument("--checkpoint", type=Path, required=True)
     pa.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
