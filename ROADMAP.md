@@ -37,12 +37,12 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
   - [ ] Split HUD token + map/object-slot encoder & slot masking (`C-JEPA` / `V-JEPA 2.1`)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
 
-## Phase 3: hierarchy (next)
+## Phase 3: hierarchy (in progress)
 
-- [ ] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) approved 2026-10-28
+- [x] Design note [docs/DESIGN_PHASE3.md](docs/DESIGN_PHASE3.md) approved 2026-10-28
 
 - [ ] 2–3 level world model, top-down planning
-- [ ] Long goals: flat vs hierarchical
+- [ ] Long goals: flat vs hierarchical (round 1: no gain on reach; wood 6% → 35%, see results)
 - [ ] Optional: LLM breaks goals into achievement subgoals
 
 ## Phase 4: memory and its own goals

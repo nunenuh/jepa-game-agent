@@ -97,3 +97,32 @@ ROC-AUC of last-step surprise, jump vs real next frame (target > 0.9):
 The model is ~15× more surprised by a teleport than by what really happens next. Caveat: a jump
 of 50+ steps changes most of the view, so this is the easy version; small teleports (a few tiles)
 or impossible inventory changes are the harder follow-up.
+
+## Phase 3 round 1: two-level hierarchy (code 33267d2)
+
+Top model: 4-step action chunks on frozen v2 latents, 3 seeds (final MSE 0.317 / 0.313 / 0.322). Top plans
+5 chunks ahead every 4 steps; the bottom (v2 flat planner) walks to the first imagined chunk.
+
+Reach (same 100 tasks per K; flat K = 10 / 20 from phase 2, K = 40 run fresh):
+
+| K | flat | hier seed 0 / 1 / 2 |
+|---|---|---|
+| 10 | 25% | 16 / 17 / 15% |
+| 20 | 9% | 7 / 6 / 8% |
+| 40 | 9% | 7 / 9 / 9% |
+
+Achievements (50 fresh worlds, 200 steps, goal = mean latent of 64 "just unlocked" training frames):
+
+| | random | flat | hier seed 0 / 1 / 2 |
+|---|---|---|---|
+| collect_wood | 48% | 6% | 32 / 38 / 38% |
+| place_table | 14% | 0% | 0 / 2 / 6% |
+| make_wood_pickaxe | 0% | 0% | 0% |
+| collect_stone | 0% | 0% | 0% |
+
+Success bar (DESIGN_PHASE3 H4) **missed** on both counts: hierarchy does not beat flat at K = 20 (it is
+worse at K = 10), and no pickaxe or stone. The one consistent gain is collect_wood, flat 6% → hier
+32–38%, still below random. Likely reasons, both risks named in the design: the top imagines subgoals
+no real frame matches, and the averaged goal picture is mostly "some view", not "an inventory with X".
+Round 2: snap subgoals to real latents; goal pictures that keep the current view and change only the
+inventory bar.
