@@ -163,7 +163,7 @@ def test_cli_trains_a_spatial_v4_model_and_plans_with_it(tmp_path: Path, capsys:
     model, _ = load_checkpoint(wm)
     assert model.cfg.grid == 4 and model.cfg.latent_dim == 4 * 4 * 4 and model.cfg.width == 16
     main(["train-top", "--data", str(data), "--bottom", str(wm), "--window", "2", "--steps", "2", "--batch-size", "8",
-          "--checkpoint", str(top)])  # fmt: skip
+          "--width", "16", "--checkpoint", str(top)])  # fmt: skip
     capsys.readouterr()
     main(["plan", "--checkpoint", str(wm), "--top", str(top), "--top-horizon", "2", "--data", str(data), "--k", "3",
           "--tasks", "3", "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1",

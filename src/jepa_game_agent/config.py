@@ -64,12 +64,15 @@ class TopConfig:
     context: int = 8
     layers: int = 4
     heads: int = 4
+    width: int = 0  # > 0: transformer width, mapped to and from the latent (v4's 2592 numbers); 0: = latent_dim
 
     def __post_init__(self) -> None:
         for name in ("num_actions", "latent_dim", "stride", "context", "layers", "heads"):
             _positive(name, getattr(self, name))
-        if self.latent_dim % self.heads:
-            raise ValueError("latent_dim must be divisible by heads")
+        if self.width < 0:
+            raise ValueError("width must be >= 0")
+        if (self.width or self.latent_dim) % self.heads:
+            raise ValueError("the transformer width (width, or latent_dim) must be divisible by heads")
 
 
 @dataclass(frozen=True)

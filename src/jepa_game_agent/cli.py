@@ -348,7 +348,8 @@ def _train_top(args: argparse.Namespace) -> None:
         episodes = [e for e in episodes if split_of(e.seed) == args.split]
     latents = encode_episodes(bottom, episodes, device)
     data = TopWindowDataset(latents, [e.actions for e in episodes], args.stride, args.window)
-    top_cfg = TopConfig(bottom.cfg.num_actions, bottom.cfg.latent_dim, args.stride, max(args.window, 2))
+    top_cfg = TopConfig(bottom.cfg.num_actions, bottom.cfg.latent_dim, args.stride, max(args.window, 2),
+                        width=args.width)  # fmt: skip
     cfg = TrainConfig(steps=args.steps, batch_size=args.batch_size, window=args.window, seed=args.seed)
     history = train_top(TopModel(top_cfg), data, cfg, checkpoint=args.checkpoint, device=device)
     summary = {"split": args.split, "episodes": len(episodes), "stride": args.stride, "seed": args.seed}
@@ -559,6 +560,7 @@ def build_parser() -> argparse.ArgumentParser:
     tt.add_argument("--bottom", type=Path, required=True, help="trained world model checkpoint (frozen encoder)")
     tt.add_argument("--stride", type=int, default=4, help="game steps per top-level step")
     tt.add_argument("--window", type=int, default=8, help="top-level steps per training sample")
+    tt.add_argument("--width", type=int, default=0, help="transformer width (0: the latent's; v4: e.g. 256)")
     tt.add_argument("--steps", type=int, default=10_000)
     tt.add_argument("--batch-size", type=int, default=256)
     tt.add_argument("--seed", type=int, default=0)

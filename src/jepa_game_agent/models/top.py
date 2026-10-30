@@ -16,7 +16,10 @@ class TopModel(nn.Module):
     def __init__(self, cfg: TopConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        d = cfg.latent_dim
+        d = cfg.width or cfg.latent_dim
+        if cfg.width:  # narrow core for a wide latent; the old layout has no inp/out, so old checkpoints load
+            self.inp = nn.Linear(cfg.latent_dim, d)
+            self.out = nn.Linear(d, cfg.latent_dim)
         self.action = nn.Embedding(cfg.num_actions, d)
         self.slot = nn.Parameter(torch.randn(1, 1, cfg.stride, d) * 0.02)  # position inside the chunk: order matters
         self.chunk = nn.Linear(cfg.stride * d, d)
@@ -28,8 +31,9 @@ class TopModel(nn.Module):
             raise ValueError(f"chunks must have shape (B, T, {self.cfg.stride})")
         a = (self.action(chunks) + self.slot).flatten(2)  # (B, T, stride * D)
         no_action = torch.zeros(latents.shape[:2], dtype=torch.long, device=latents.device)
-        y: torch.Tensor = self.core(latents + self.chunk(a), no_action)
-        return y
+        h = self.inp(latents) if self.cfg.width else latents
+        y: torch.Tensor = self.core(h + self.chunk(a), no_action)
+        return self.out(y) if self.cfg.width else y
 
     @torch.no_grad()
     def rollout(self, start: torch.Tensor, chunks: torch.Tensor) -> torch.Tensor:

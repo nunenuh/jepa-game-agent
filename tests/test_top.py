@@ -36,6 +36,19 @@ def test_top_model_shapes_and_order_of_actions_matters() -> None:
     assert differs.any() and not torch.allclose(top(z, chunks), top(z, swapped))
 
 
+def test_a_narrow_top_model_works_on_a_wide_latent() -> None:
+    """width: the top's transformer runs at `width` and maps back to the latent (v4's 2592 numbers), so it stays
+    small; width 0 keeps the old layout (transformer as wide as the latent) so old checkpoints load."""
+    wide = TopModel(top_cfg(latent_dim=2592, heads=4, width=64)).eval()
+    assert sum(p.numel() for p in wide.parameters()) < 1_000_000
+    z, chunks = torch.randn(2, 3, 2592), torch.randint(5, (2, 3, 4))
+    assert wide(z, chunks).shape == (2, 3, 2592) and wide.rollout(z[:, 0], chunks).shape == (2, 3, 2592)
+    old = TopModel(top_cfg(latent_dim=8, heads=2))
+    assert old.cfg.width == 0 and not hasattr(old, "inp")
+    with pytest.raises(ValueError):
+        top_cfg(latent_dim=8, heads=3, width=10)  # width must be divisible by heads
+
+
 def test_window_dataset_lines_up_latents_and_action_chunks() -> None:
     lat = [np.arange(30, dtype=np.float32)[:, None].repeat(2, 1)]  # latent t == [t, t]
     acts = [np.arange(29) % 5]
