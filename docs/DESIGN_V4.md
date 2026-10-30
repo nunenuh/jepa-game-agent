@@ -1,6 +1,6 @@
 # Design note: v4, a spatial latent (one latent per game tile)
 
-Status: **draft 2026-10-30**, for approval. Results so far: [experiments/results](../experiments/results/README.md).
+Status: **approved 2026-10-30** (as drafted). Results so far: [experiments/results](../experiments/results/README.md).
 
 ## The problem
 

@@ -61,12 +61,15 @@ def _train(args: argparse.Namespace) -> None:
     model = WorldModel(
         ModelConfig(
             num_actions=args.num_actions,
-            latent_dim=args.latent_dim,
+            latent_dim=args.grid * args.grid * args.token_dim if args.grid else args.latent_dim,
             channels=episodes[0].frames.shape[-1],
             context=max(args.window, 2),
             inverse_weight=args.inverse_weight,
             hud_rows=args.hud_rows,
             hud_dim=args.hud_dim,
+            grid=args.grid,
+            token_dim=args.token_dim,
+            width=args.width,
         )
     )
     cfg = TrainConfig(
@@ -495,6 +498,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--hud-rows", type=int, default=0, help="bottom pixel rows with their own encoder (Craftax-Classic: 14)"
     )
     t.add_argument("--hud-dim", type=int, default=ModelConfig.hud_dim, help="latent dims for those rows")
+    t.add_argument("--grid", type=int, default=0,
+                   help="v4: grid x grid tile tokens (Craftax-Classic: 9); sets latent-dim")  # fmt: skip
+    t.add_argument("--token-dim", type=int, default=ModelConfig.token_dim, help="numbers per tile token")
+    t.add_argument("--width", type=int, default=ModelConfig.width, help="spatial predictor width")
     t.add_argument("--window", type=int, default=8)
     t.add_argument("--steps", type=int, default=1000)
     t.add_argument("--batch-size", type=int, default=64)

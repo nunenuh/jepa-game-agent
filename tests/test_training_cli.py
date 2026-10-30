@@ -148,3 +148,24 @@ def test_cli_plan_with_a_top_model_runs_the_hierarchical_agent(
     assert res["config"]["snap"] == {"data": [str(data)], "size": 50}
     assert res["config"]["top_planner"]["horizon"] == 2
     assert set(json.loads(capsys.readouterr().out)) == {"k=3"}
+
+
+def test_cli_trains_a_spatial_v4_model_and_plans_with_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """--grid: one token per tile; latent_dim is set to grid * grid * token_dim. The top model, planner and
+    prior work on the flattened tokens unchanged."""
+    from jepa_game_agent.training.trainer import load_checkpoint
+
+    data, wm, top, out = tmp_path / "eps.npz", tmp_path / "wm.pt", tmp_path / "top.pt", tmp_path / "plan.json"
+    main(["collect", "--episodes", "6", "--max-steps", "30", "--out", str(data)])
+    main(["train", "--data", str(data), "--num-actions", "5", "--grid", "4", "--token-dim", "4", "--width", "16",
+          "--inverse-weight", "0.5", "--window", "4", "--steps", "2", "--batch-size", "4",
+          "--checkpoint", str(wm)])  # fmt: skip
+    model, _ = load_checkpoint(wm)
+    assert model.cfg.grid == 4 and model.cfg.latent_dim == 4 * 4 * 4 and model.cfg.width == 16
+    main(["train-top", "--data", str(data), "--bottom", str(wm), "--window", "2", "--steps", "2", "--batch-size", "8",
+          "--checkpoint", str(top)])  # fmt: skip
+    capsys.readouterr()
+    main(["plan", "--checkpoint", str(wm), "--top", str(top), "--top-horizon", "2", "--data", str(data), "--k", "3",
+          "--tasks", "3", "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1",
+          "--out", str(out)])  # fmt: skip
+    assert json.loads(out.read_text())["reach"]["k=3"]["hier"]["tasks"] == 3

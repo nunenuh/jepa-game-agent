@@ -24,11 +24,25 @@ class ModelConfig:
     inverse_weight: float = 0.0  # > 0 adds an inverse-dynamics head: guess a_t from (z_t, z_t+1)
     hud_rows: int = 0  # > 0: the bottom hud_rows pixel rows (Craftax-Classic's inventory: 14) get their own encoder
     hud_dim: int = 32  # ...whose output is the last hud_dim latent dims
+    grid: int = 0  # > 0: v4 spatial latent, grid x grid tokens (one per tile; Craftax-Classic: 9)
+    token_dim: int = 32  # ...of token_dim numbers each; latent_dim must be grid * grid * token_dim
+    width: int = 128  # spatial predictor's transformer width
 
     def __post_init__(self) -> None:
         for name in ("num_actions", "latent_dim", "channels", "context", "predictor_layers", "predictor_heads"):
             _positive(name, getattr(self, name))
-        if self.latent_dim % self.predictor_heads:
+        if self.grid < 0:
+            raise ValueError("grid must be >= 0")
+        if self.grid:
+            _positive("token_dim", self.token_dim)
+            _positive("width", self.width)
+            if self.latent_dim != self.grid * self.grid * self.token_dim:
+                raise ValueError("latent_dim must be grid * grid * token_dim")
+            if self.hud_rows:
+                raise ValueError("grid and hud_rows can't be combined: the tiles already cover the status bar")
+            if self.width % self.predictor_heads:
+                raise ValueError("width must be divisible by predictor_heads")
+        elif self.latent_dim % self.predictor_heads:
             raise ValueError("latent_dim must be divisible by predictor_heads")
         if self.sigreg_weight < 0:
             raise ValueError("sigreg_weight must be >= 0")

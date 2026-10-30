@@ -12,6 +12,7 @@ from jepa_game_agent.config import ModelConfig
 from jepa_game_agent.models.encoder import Encoder
 from jepa_game_agent.models.predictor import Predictor
 from jepa_game_agent.models.sigreg import sigreg
+from jepa_game_agent.models.spatial import SpatialEncoder, SpatialPredictor
 
 
 @dataclass(frozen=True)
@@ -26,16 +27,23 @@ class WorldModel(nn.Module):
     def __init__(self, cfg: ModelConfig) -> None:
         super().__init__()
         self.cfg = cfg
-        self.encoder = Encoder(cfg.channels, cfg.latent_dim, cfg.hud_rows, cfg.hud_dim)
-        self.predictor = Predictor(
-            cfg.num_actions, cfg.latent_dim, cfg.context, cfg.predictor_layers, cfg.predictor_heads
-        )
+        self.encoder: nn.Module
+        self.predictor: nn.Module
+        if cfg.grid:  # v4: one token per tile, flattened to latent_dim outside the model
+            self.encoder = SpatialEncoder(cfg.channels, cfg.grid, cfg.token_dim)
+            self.predictor = SpatialPredictor(cfg.num_actions, cfg.grid * cfg.grid, cfg.token_dim, cfg.context,
+                                              cfg.predictor_layers, cfg.predictor_heads, cfg.width)  # fmt: skip
+        else:
+            self.encoder = Encoder(cfg.channels, cfg.latent_dim, cfg.hud_rows, cfg.hud_dim)
+            self.predictor = Predictor(
+                cfg.num_actions, cfg.latent_dim, cfg.context, cfg.predictor_layers, cfg.predictor_heads
+            )
         # Inverse dynamics: which action led from z_t to z_t+1? Forces the latent to keep what actions change
         # (e.g. the player's facing in Craftax). Only built when used, so older checkpoints load unchanged.
         self.inverse: nn.Module | None = None
         if cfg.inverse_weight > 0:
-            d = cfg.latent_dim
-            self.inverse = nn.Sequential(nn.Linear(2 * d, d), nn.GELU(), nn.Linear(d, cfg.num_actions))
+            d, hidden = cfg.latent_dim, min(cfg.latent_dim, 256)  # v2: hidden = d = 128, unchanged
+            self.inverse = nn.Sequential(nn.Linear(2 * d, hidden), nn.GELU(), nn.Linear(hidden, cfg.num_actions))
 
     def encode(self, frames: torch.Tensor) -> torch.Tensor:
         z: torch.Tensor = self.encoder(frames)
@@ -46,13 +54,22 @@ class WorldModel(nn.Module):
         z = self.encode(frames)
         pred = self.predictor(z[:, :-1], actions)
         prediction = F.mse_loss(pred, z[:, 1:])
-        reg = sigreg(z.reshape(-1, z.size(-1)))
+        reg = sigreg(self._reg_rows(z))
         inverse = torch.zeros((), device=z.device)
         if self.inverse is not None:
             logits = self.inverse(torch.cat([z[:, :-1], z[:, 1:]], -1))
             inverse = F.cross_entropy(logits.reshape(-1, logits.size(-1)), actions.reshape(-1))
         total = prediction + self.cfg.sigreg_weight * reg + self.cfg.inverse_weight * inverse
         return Losses(total, prediction, reg, inverse)
+
+    def _reg_rows(self, z: torch.Tensor) -> torch.Tensor:
+        """Rows SIGReg keeps Gaussian: one latent per frame, or (v4) per-tile tokens, as many as there are frames
+        (sampled), so the regularizer's strength matches v2's."""
+        frames = z.reshape(-1, z.size(-1))
+        if not self.cfg.grid:
+            return frames
+        tokens = frames.reshape(-1, self.cfg.token_dim)
+        return tokens[torch.randint(len(tokens), (max(len(frames), 2),), device=z.device)]
 
     @torch.no_grad()
     def rollout(
