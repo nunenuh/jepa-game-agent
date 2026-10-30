@@ -58,21 +58,26 @@ def test_replay_threats_pairs_each_replayed_frame_with_its_zombie_map() -> None:
     assert [int(np.argmax(m)) for m in maps] == [3 * 9 + 8, 3 * 9 + 7, 3 * 9 + 6]
 
 
-def test_threat_head_is_shared_by_every_tile() -> None:
-    head = ThreatHead(token_dim=4).eval()
-    z = torch.randn(2, 5, 4).repeat(1, 1, 3)  # three identical tokens per latent
-    out = head(z)
-    assert out.shape == (2, 5, 3) and torch.allclose(out[..., 0], out[..., 2])
+def test_threat_head_reads_each_tile_with_its_neighbours_only() -> None:
+    """A 3 x 3 conv over the token grid: a tile's logit depends on its own and its 8 neighbours' tokens only
+    (the encoder spreads a zombie over neighbouring tokens, so one token alone reads it poorly)."""
+    head = ThreatHead(token_dim=4, grid=5).eval()
+    z = torch.randn(1, 25 * 4)
+    far = z.clone().view(1, 5, 5, 4)
+    far[0, 4, 4] += 5.0  # change the bottom-right tile
+    a, b = head(z), head(far.reshape(1, -1))
+    assert a.shape == (1, 25)
+    assert torch.allclose(a[0, 0], b[0, 0]) and not torch.allclose(a[0, 18], b[0, 18])  # (0,0) far, (3,3) next to it
 
 
 def test_threat_head_learns_which_tiles_hold_a_zombie(tmp_path: Path) -> None:
     rng = np.random.default_rng(0)
-    lat = [rng.normal(size=(50, 6 * 4)).astype(np.float32) for _ in range(4)]
-    maps = [(x.reshape(50, 6, 4)[..., 0] > 0.5).astype(np.float32) for x in lat]  # zombie <=> token dim 0 high
-    head = ThreatHead(token_dim=4)
+    lat = [rng.normal(size=(50, 9 * 4)).astype(np.float32) for _ in range(4)]
+    maps = [(x.reshape(50, 9, 4)[..., 0] > 0.5).astype(np.float32) for x in lat]  # zombie <=> token dim 0 high
+    head = ThreatHead(token_dim=4, grid=3)
     history = train_threat(head, lat, maps, steps=300, batch_size=32, seed=0)
     assert history[-1]["loss"] < 0.5 * history[0]["loss"]
-    probe = torch.zeros(1, 6 * 4)
+    probe = torch.zeros(1, 9 * 4)
     probe[0, 0] = 3.0  # tile 0: dim 0 high
     p = torch.sigmoid(head(probe))[0]
     assert p[0] > 0.8 and p[1] < 0.3

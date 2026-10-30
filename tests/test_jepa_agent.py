@@ -264,7 +264,7 @@ def test_threat_cost_avoids_imagined_futures_with_danger_next_to_the_player() ->
     env = make_env()
     env.reset(seed=0)
     cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
-    agent = JepaAgent(exact_model(), cfg, threat=Zombies(token_dim=2), threat_weight=5.0, threat_tiles=[0])
+    agent = JepaAgent(exact_model(), cfg, threat=Zombies(token_dim=2, grid=1), threat_weight=5.0, threat_tiles=[0])
     agent.reset([env.set_agent(3, 3)])
     assert agent.act(env.set_agent(0, 0)) == 4
     with pytest.raises(ValueError):

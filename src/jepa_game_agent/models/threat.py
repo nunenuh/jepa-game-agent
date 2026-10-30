@@ -1,4 +1,4 @@
-"""Threat sense: is there a zombie on this tile? One tiny head shared by every tile token of a spatial (v4) latent.
+"""Threat sense: is there a zombie on this tile? A small conv head over the tile tokens of a spatial (v4) latent.
 
 Run on imagined tokens it says where danger will be, so the planner can avoid futures with a zombie next to the
 player (like the amygdala reading the cortex's predictions). Labels (zombie positions) only train this head."""
@@ -17,13 +17,18 @@ def around(grid: int, center: tuple[int, int]) -> list[int]:
 
 
 class ThreatHead(nn.Module):
-    def __init__(self, token_dim: int, hidden: int = 32) -> None:
+    """A 3 x 3 conv over the grid of tile tokens: each tile is read with its 8 neighbours, the same weights for
+    every tile (the encoder spreads a zombie over neighbouring tokens: one token alone read 'zombie next to the
+    player' at AUC 0.72, a 3 x 3 neighbourhood at 0.97)."""
+
+    def __init__(self, token_dim: int, grid: int, hidden: int = 64) -> None:
         super().__init__()
-        self.token_dim, self.hidden = token_dim, hidden
-        self.net = nn.Sequential(nn.Linear(token_dim, hidden), nn.GELU(), nn.Linear(hidden, 1))
+        self.token_dim, self.grid, self.hidden = token_dim, grid, hidden
+        self.net = nn.Sequential(nn.Conv2d(token_dim, hidden, 3, padding=1), nn.GELU(), nn.Conv2d(hidden, 1, 1))
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        """(..., N * token_dim) flattened tokens -> (..., N) logits, 'zombie on this tile'."""
-        tokens = z.reshape(*z.shape[:-1], -1, self.token_dim)
-        out: torch.Tensor = self.net(tokens)[..., 0]
+        """(..., grid * grid * token_dim) flattened tokens -> (..., grid * grid) logits, 'zombie on this tile'."""
+        lead, g = z.shape[:-1], self.grid
+        x = z.reshape(-1, g, g, self.token_dim).permute(0, 3, 1, 2)
+        out: torch.Tensor = self.net(x).reshape(*lead, g * g)
         return out

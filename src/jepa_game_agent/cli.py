@@ -465,7 +465,7 @@ def _train_threat(args: argparse.Namespace) -> None:
     maps = [m for _, m in replays]
     held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out
     fit = [i for i in range(len(episodes)) if not held[i]]
-    head = ThreatHead(bottom.cfg.token_dim)
+    head = ThreatHead(bottom.cfg.token_dim, grid)
     history = train_threat(head, [latents[i] for i in fit], [maps[i] for i in fit], args.steps, args.batch_size,
                            seed=args.seed, device=device)  # fmt: skip
     save_threat(args.checkpoint, head, history)

@@ -83,8 +83,8 @@ def train_threat(
 
 def save_threat(path: Path, head: ThreatHead, history: list[dict[str, float]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"model": head.state_dict(), "cfg": {"token_dim": head.token_dim, "hidden": head.hidden},
-                "history": history}, path)  # fmt: skip
+    cfg = {"token_dim": head.token_dim, "grid": head.grid, "hidden": head.hidden}
+    torch.save({"model": head.state_dict(), "cfg": cfg, "history": history}, path)
 
 
 def load_threat(path: Path, device: str | torch.device = "cpu") -> tuple[ThreatHead, dict[str, Any]]:
