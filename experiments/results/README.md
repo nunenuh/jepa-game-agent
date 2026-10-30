@@ -434,3 +434,32 @@ The v2 latent carries only a hint of danger: even a linear head reaches AUC 0.70
 Danger comes from the surroundings (zombies), not the health bar, and the pooled 1-vector latent blurs small
 sprites (phase 2: facing). Next: v4, a spatial latent (small grid of latents, as in V-JEPA 2-AC and
 DINO-WM), still our own reward-free JEPA trained from scratch on Craftax; then the critic again.
+
+## v4 spatial latent: can it see? (code 68fa6e2, design note docs/DESIGN_V4.md)
+
+Training (30k steps × batch 128, window 4, inverse weight 0.5, same PPO train split as v2; 40 min on A100):
+prediction 0.043 (v2 0.091; per tile token, not directly comparable), SIGReg 1.76 (v2 6.7), inverse-dynamics
+CE **0.84** (v2 1.08): no collapse, and v4 tells better which action was taken.
+
+**Ceiling check first:** fitting raw pixels → vitals directly (random forest, 80 replayed games, 1 in 5 held out)
+gives health, food, drink R² 1.00 (energy 0.92): health is plainly visible and the labels are right, so earlier
+low readout scores were the latents dropping it.
+
+Same 80 games (17k frames), random forest per representation, 1 in 5 games held out:
+
+| read off | raw pixels (ceiling) | v2 latent | **v4 latent** |
+|---|---|---|---|
+| zombie adjacent (AUC) | 0.99 | 0.65 | **0.84** |
+| zombie within 3 tiles (AUC) | 0.81 | 0.65 | **0.74** |
+| hit in the next 10 steps (AUC) | 0.73 | 0.66 | **0.73** |
+| health (R²) | 1.00 | 0.16 | **0.74** |
+
+On the 600 cached replays (MLP / linear heads as in the critic diagnosis): danger AUC v4 0.71–0.75 vs v2
+0.70–0.73; vitals R² v4 health 0.62 / food 0.51 / drink 0.85 / energy 0.57 (linear) vs v2 0.67 / 0.62 / 0.82 /
+0.67 (best MLP).
+
+**The design note's danger bar (0.85) was unreachable:** "hit in the next 10 steps" is random enough that even
+raw pixels reach only 0.73, and v4 reaches that ceiling. v4 does see more: adjacent zombies 0.65 → 0.84 and
+health 0.16 → 0.74 (random forest), though below the pixels' 0.99 and 1.00. JEPA keeps less of what it can't
+predict (health drops and zombie moves are random). Next: play with v4 (retrain the action prior and top model
+on it, then the chain with the survival cost and critic).
