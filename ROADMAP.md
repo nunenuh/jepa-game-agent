@@ -36,6 +36,9 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
   - [x] Inverse-dynamics auxiliary loss (facing R² -0.41 → 0.60; K=10 12% → 25%) $g(z_t, z_{t+1}) \to \hat{a}_t$ (`H-JEPA`, arXiv 2610.06805)
   - [x] Split HUD encoder (inventory R² 0.59 → 0.997; planning worse, see phase 3)
   - [ ] Factorized HUD vs. map / UOT planning cost (`Slot-JEPA`)
+  - [ ] **v4: spatial latent** (a small grid of latents instead of one pooled vector, as in V-JEPA 2-AC and
+        DINO-WM; still our own JEPA trained from scratch, reward-free): pulled into phase 3 because v2 does
+        not see zombies (danger critic AUC 0.73)
 
 ## Phase 3: hierarchy (reopened for crafting; see [results](experiments/results/README.md))
 
@@ -48,8 +51,14 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] Correct recipe (given, from the game code: a table costs 2 wood): table 38% with `--travel before`
       (random 14%), first wood pickaxe
 - [ ] Agent modules still missing (see [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md)):
-  - [ ] Body sense: readout heads latent → health, food, drink, energy
-  - [ ] Survival cost in the planner (every agent dies at ~130 steps today)
+  - [x] Body sense: readout heads latent → health, food, drink, energy (v2 health R² 0.62 after the replay
+        label fix; v3 0.14)
+  - [x] Survival cost in the planner: first full chain (1/50) and table 42%, but no clear gain; still
+        killed by zombies at ~135–150 steps
+  - [x] Danger critic (health lost in the next N steps): v2 latent sees danger only weakly (AUC 0.73)
+  - [ ] **Now: v4 spatial latent**, then critic + survival again on v4
+  - [ ] Later, if long chains stall once the agent survives: H-JEPA-style levels with their own latents
+        (arXiv 2610.06805)
   - [ ] Memory of trees, table, stone (moved up from phase 4)
   - [ ] Recipe learned from the recorded games instead of given
 - [ ] Optional: LLM subgoals

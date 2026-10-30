@@ -413,3 +413,24 @@ model imagine the same actions for the readout while v2 plans (used for the v3 r
 with a zombie next to the player, at a median of 134–149 steps. A health cost reacts only after the hit
 (pain, not danger), and a stronger one costs crafting steps. Next: a learned critic that predicts health
 about to be lost (`jga train-readout --danger N`, `--critic`, `--danger`, code 83f04cf).
+
+## Danger critic diagnosis (code 83f04cf, cached replays)
+
+The critic as first trained (MLP, 5000 steps, "health lost in the next N steps") scored held-out R² −0.52
+(N 10) and −0.48 (N 20): it memorized the training games. On 600 cached replays (130k frames, 1 in 5
+games held out):
+
+| critic variant | N = 5 | N = 10 |
+|---|---|---|
+| health lost, MLP 2000 steps | R² −0.12 (train 0.26) | R² −0.21 (train 0.41) |
+| health lost, MLP 300 steps | R² 0.01 | R² 0.02 |
+| health lost, linear | R² 0.04 | R² 0.06 |
+| hit soon yes/no, MLP 2000 steps | AUC 0.69 (train 0.92) | AUC 0.68 (train 0.93) |
+| **hit soon yes/no, MLP 300 steps** | **AUC 0.72** | **AUC 0.73** |
+| hit soon yes/no, linear | AUC 0.70 | AUC 0.72 |
+| health now (true value) → danger | R² 0.04 | R² 0.04 |
+
+The v2 latent carries only a hint of danger: even a linear head reaches AUC 0.70 and nothing passes 0.73.
+Danger comes from the surroundings (zombies), not the health bar, and the pooled 1-vector latent blurs small
+sprites (phase 2: facing). Next: v4, a spatial latent (small grid of latents, as in V-JEPA 2-AC and
+DINO-WM), still our own reward-free JEPA trained from scratch on Craftax; then the critic again.
