@@ -463,3 +463,20 @@ raw pixels reach only 0.73, and v4 reaches that ceiling. v4 does see more: adjac
 health 0.16 → 0.74 (random forest), though below the pixels' 0.99 and 1.00. JEPA keeps less of what it can't
 predict (health drops and zombie moves are random). Next: play with v4 (retrain the action prior and top model
 on it, then the chain with the survival cost and critic).
+
+## v4 plays: flat reach (code 74df24d)
+
+Same 100 reach tasks per K as phases 2–3 (test split), flat planner, default CEM settings:
+
+| reach | K = 5 | K = 10 |
+|---|---|---|
+| random | 4% | 4% |
+| v2 (inverse dynamics) | 32% | 25% |
+| **v4 (spatial latent)** | **51%** | **35%** |
+
+The best flat planning so far: the spatial latent helps planning itself, not only what heads can read off it.
+The action prior trained as before (loss 2.11). The top model needed `--width 256`
+(`TopConfig.width`, code 74df24d): a transformer as wide as v4's 2592-number latent was too big to train in
+reasonable time; the narrow one trained in 7 minutes (final loss 0.23). The v4 health readout as trained by
+`jga train-readout` (MLP, 1000 steps) scores R² 0.52 / food 0.52 / drink 0.81 / energy 0.35, below the
+random forest's 0.74 on the same latent: the MLP head overfits the 2592 inputs.
