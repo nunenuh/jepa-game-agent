@@ -357,3 +357,30 @@ round 9 exactly (deterministic). The planner has no reason to avoid zombies: its
 distance. Next: the survival cost (`--readout`, `--survival`, code dbd3f41), which penalizes imagined
 futures whose read-out health drops, so avoiding or fighting zombies comes from the world model's own
 predictions.
+
+## Survival cost, first try (`--readout`, `--survival`, code 7c2118d)
+
+**Body sense** (`jga train-readout` on v2 latents, 300 recorded games replayed for labels, 60 held out):
+
+| | health | food | drink | energy |
+|---|---|---|---|---|
+| R² (held-out games) | 0.33 | 0.35 | 0.68 | 0.31 |
+
+The v2 latent barely encodes the status bar, like the inventory before the HUD encoder (wood 0.59 → 0.997
+with v3). So the readout's sense of health is weak.
+
+**Chain with the survival cost** (round 9 best setup: v2 hier + prior, `--goal-as both --travel before
+--reach 0.5`, given recipe, 50 worlds, 400 steps):
+
+| survival λ | wood ×2 | table | wood ×1 | pickaxe | stone | length median (mean) | deaths, zombie adjacent | drink 0 at death |
+|---|---|---|---|---|---|---|---|---|
+| 0 (round 9) | 46% | 38% | 10% | 0% | 0% | 124 | 50 / 50 | 11–12 |
+| 1 | 42% | 38% | 12% | 0% | 0% | 144 (144) | 49 / 50 | 6 |
+| 3 | 38% | 34% | 6% | 0% | 0% | 172 (151) | 48 / 50 | 16 |
+| 10 | 28% | 24% | 6% | 0% | 0% | 136.5 (147) | 50 / 50 | 16 |
+
+**No real gain.** Every episode still ends in death (150 of 150), almost always with a zombie next to the
+player. Mean length rises only ~124 → 145–151 steps, and a stronger penalty takes steps away from crafting
+(table 38% → 24% at λ 10). With R² 0.33 the planner cannot tell an imagined hit from noise. Next: a health
+readout the world model can actually support: read the status bar with the HUD encoder (v3 HUD dims or a
+HUD stream added to v2), then retry the survival cost.
