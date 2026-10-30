@@ -67,7 +67,9 @@ def plan_to_goal(
     """
 
     def cost(seqs: torch.Tensor) -> torch.Tensor:
-        path = model.rollout(now.expand(len(seqs), -1), seqs)  # (N, K, D)
+        with torch.autocast(now.device.type, dtype=torch.bfloat16, enabled=cfg.half):
+            path = model.rollout(now.expand(len(seqs), -1), seqs)  # (N, K, D)
+        path = path.float()
         sq = (path - goal).pow(2)
         c = (sq if weights is None else sq * weights).sum(-1).sum(-1)
         return c if extra_cost is None else c + extra_cost(path, seqs)

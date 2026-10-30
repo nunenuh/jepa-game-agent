@@ -72,8 +72,7 @@ class SpatialPredictor(nn.Module):
         x = self.inp(latents.reshape(b, t, self.tokens, self.token_dim))
         x = x + self.action(actions).unsqueeze(2) + self.tile_pos + self.time_pos[:, :t]
         frame = torch.arange(t, device=latents.device).repeat_interleave(self.tokens)
-        mask = torch.zeros(t * self.tokens, t * self.tokens, device=latents.device)
-        mask = mask.masked_fill(frame.unsqueeze(0) > frame.unsqueeze(1), float("-inf"))  # no later frames
+        mask = frame.unsqueeze(0) > frame.unsqueeze(1)  # True = may not attend: no later frames
         y = self.blocks(x.reshape(b, t * self.tokens, -1), mask=mask)
         out: torch.Tensor = self.out(y).reshape(b, t, -1)
         return out

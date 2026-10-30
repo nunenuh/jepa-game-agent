@@ -170,6 +170,16 @@ def test_chain_reports_how_far_each_world_got() -> None:
     assert res["stage_rates"] == {"a": 1.0, "b": 0.0}
 
 
+def test_chain_reports_progress_after_each_world() -> None:
+    """progress(done, total, world): called after every world, so long runs show how far they got."""
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b"))]
+    tasks = [AchievementTask("b", seed=s, budget=5) for s in range(3)]
+    seen: list[tuple[int, int, int]] = []
+    evaluate_chain(lambda: _ScriptedEnv({2: ("a",)}), tasks, lambda t: _GoalLog(), chain,
+                   progress=lambda done, total, world: seen.append((done, total, world["length"])))  # fmt: skip
+    assert [(d, t) for d, t, _ in seen] == [(1, 3), (2, 3), (3, 3)] and all(n == 5 for _, _, n in seen)
+
+
 class _InventoryEnv(_ScriptedEnv):
     """Also scripts the wood count per step: {step: wood}."""
 

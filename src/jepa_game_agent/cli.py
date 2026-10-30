@@ -136,7 +136,8 @@ def _plan(args: argparse.Namespace) -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
-    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations)
+    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations,
+                        half=args.half)  # fmt: skip
     episodes, env = load_episodes(args.data), make_env(args.env, seed=args.seed)
     name = "jepa"
 
@@ -242,7 +243,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
-    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations)
+    cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations,
+                        half=args.half)  # fmt: skip
     goal_eps = [e for path in args.goal_data for e in load_episodes(path)]
     if args.goal_split != "all":
         goal_eps = [e for e in goal_eps if split_of(e.seed) == args.goal_split]
@@ -309,7 +311,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                 raise ValueError(f"{args.env} has no inventory to count items in")
             counts = lambda e: e.inventory()  # noqa: E731
         probe = (lambda e: e.vitals()) if hasattr(env, "vitals") else None  # what killed the player
-        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe)
+        res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe,
+                             progress=_print_progress)  # fmt: skip
     for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
@@ -374,6 +377,15 @@ def _train_prior(args: argparse.Namespace) -> None:
                           seed=args.seed, device=device)  # fmt: skip
     save_prior(args.checkpoint, prior, history)
     print(json.dumps({"split": args.split, "episodes": len(episodes), "last": history[-1]}))
+
+
+def _print_progress(done: int, total: int, world: dict[str, object]) -> None:
+    """One line per finished world on stderr, so a long run shows how far it got (stdout stays JSON)."""
+    import sys
+    import time
+
+    print(f"{time.strftime('%H:%M:%S')} world {done}/{total}: {world['ended']} after {world['length']} steps, "
+          f"reached {world['reached']}", file=sys.stderr, flush=True)  # fmt: skip
 
 
 def _train_readout(args: argparse.Namespace) -> None:
@@ -531,6 +543,7 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--samples", type=int, default=PlannerConfig.samples)
     pl.add_argument("--elites", type=int, default=PlannerConfig.elites)
     pl.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pl.add_argument("--half", action="store_true", help="imagine in bfloat16 (faster on a GPU)")
     pl.add_argument("--top", type=Path, default=None, help="top-level checkpoint: run the hierarchical agent")
     pl.add_argument("--top-horizon", type=int, default=5, help="top-level plan length, in chunks")
     pl.add_argument("--snap-data", type=Path, nargs="+", default=None, help="games whose frames subgoals snap to")
@@ -617,6 +630,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--samples", type=int, default=PlannerConfig.samples)
     pa.add_argument("--elites", type=int, default=PlannerConfig.elites)
     pa.add_argument("--iterations", type=int, default=PlannerConfig.iterations)
+    pa.add_argument("--half", action="store_true", help="imagine in bfloat16 (faster on a GPU)")
     pa.add_argument("--snap-data", type=Path, nargs="+", default=None, help="games whose frames subgoals snap to")
     pa.add_argument("--snap-size", type=int, default=50_000, help="latents kept for snapping")
     pa.add_argument(

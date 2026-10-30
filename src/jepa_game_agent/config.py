@@ -100,6 +100,7 @@ class PlannerConfig:
     iterations: int = 6
     smoothing: float = 0.7  # weight of the elite frequencies in each update
     seed: int = 0
+    half: bool = False  # imagine futures in bfloat16 (faster on a GPU); costs still compared in float32
 
     def __post_init__(self) -> None:
         for name in ("horizon", "samples", "elites", "iterations"):

@@ -112,3 +112,20 @@ def test_extra_cost_steers_the_plan_away_from_danger() -> None:
     danger = lambda path, seqs: 10.0 * path[..., 0].clamp(min=0).sum(-1)  # noqa: E731
     seq = plan_to_goal(wm, torch.tensor([0.0, 0.0]), torch.tensor([3.0, 3.0]), cfg, extra_cost=danger)
     assert torch.equal(seq[:3], torch.tensor([2, 2, 2]))
+
+
+def test_half_precision_planning_finds_the_same_plan() -> None:
+    """half: imagine futures in bfloat16 (faster on a GPU); the cost is still compared in float32."""
+    cfg_m = ModelConfig(num_actions=5, latent_dim=2, context=8, predictor_layers=1, predictor_heads=1)
+    wm = WorldModel(cfg_m).eval()
+    step = torch.tensor([[0.0, 0.0], [0.0, -1.0], [0.0, 1.0], [-1.0, 0.0], [1.0, 0.0]])
+
+    class Exact(torch.nn.Module):
+        def forward(self, latents: torch.Tensor, actions: torch.Tensor) -> torch.Tensor:
+            return latents + step[actions]
+
+    wm.predictor = Exact()  # type: ignore[assignment]
+    now, goal = torch.tensor([0.0, 0.0]), torch.tensor([3.0, 2.0])
+    full = plan_to_goal(wm, now, goal, PlannerConfig(horizon=6, samples=128, elites=16, iterations=4))
+    half = plan_to_goal(wm, now, goal, PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, half=True))
+    assert torch.equal(full, half) and PlannerConfig().half is False

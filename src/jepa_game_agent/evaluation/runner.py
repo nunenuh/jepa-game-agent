@@ -126,11 +126,13 @@ def evaluate_chain(
     chain: Sequence[ChainStage | tuple[str, Sequence[Frame]]],
     counts: Callable[[GameEnv], Mapping[str, int]] | None = None,
     probe: Callable[[GameEnv], Mapping[str, Any]] | None = None,
+    progress: Callable[[int, int, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Pursue the chain's stages in order, each given as its goal frames; the agent is handed the first stage
     not yet done (one already done when reached is skipped; done stays done). Success = every stage done
     within the budget. counts(env) -> inventory, needed for stages that count items. probe(env) -> what to
-    record about the world when each episode ends (e.g. vitals, to see what killed the player)."""
+    record about the world when each episode ends (e.g. vitals, to see what killed the player).
+    progress(done, total, world): called after each world (long runs show how far they got)."""
     stages = [c if isinstance(c, ChainStage) else ChainStage(*c) for c in chain]
     if not stages:
         raise ValueError("empty chain")
@@ -168,6 +170,8 @@ def evaluate_chain(
         steps.append(hit)
         reached.append(labels[:stage])
         unlocked.append(got)
+        if progress is not None:
+            progress(len(lengths), len(tasks), {"length": step, "ended": how, "reached": labels[:stage]})
     n = len(tasks)
     return {
         "family": "chain",
