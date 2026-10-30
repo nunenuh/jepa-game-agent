@@ -199,3 +199,35 @@ def test_survival_cost_avoids_futures_that_lose_health() -> None:
     assert agent.act(env.set_agent(0, 0)) == 2
     with pytest.raises(ValueError):
         JepaAgent(exact_model(), cfg, survival=1.0)  # survival needs a readout
+
+
+def test_survival_cost_can_read_health_off_a_second_world_model() -> None:
+    """critic: another world model imagines the same action sequences; the readout reads its latents.
+    The critic's latent is (col, row), so the same Hurts readout now says going right hurts: head down first."""
+    from jepa_game_agent.models.readout import Readout
+
+    class Hurts(Readout):
+        def forward(self, z: torch.Tensor) -> torch.Tensor:
+            health = 9 - 3 * z[..., 0]
+            return torch.stack([health, health * 0 + 9, health * 0 + 9, health * 0 + 9], -1)
+
+    class Flipped(torch.nn.Module):
+        def __init__(self, inner: torch.nn.Module) -> None:
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, *args: torch.Tensor) -> torch.Tensor:
+            if len(args) == 1:
+                return self.inner(args[0]).flip(-1)
+            return self.inner(args[0].flip(-1), args[1]).flip(-1)
+
+    critic = exact_model()
+    critic.encoder, critic.predictor = Flipped(Position()), Flipped(Moves())  # type: ignore[assignment]
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, readout=Hurts(2), survival=5.0, critic=critic)
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 4
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, critic=critic)  # a critic is only read through a readout

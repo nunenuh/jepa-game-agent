@@ -252,6 +252,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         from jepa_game_agent.training.readout_trainer import load_readout
 
         readout, _ = load_readout(args.readout, device)
+    critic = None if args.critic is None else load_checkpoint(args.critic, device)[0]
     prior = None
     if args.prior is not None:
         from jepa_game_agent.training.prior_trainer import load_prior
@@ -261,7 +262,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
                          prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
-                         travel=args.travel, readout=readout, survival=args.survival)  # fmt: skip
+                         travel=args.travel, readout=readout, survival=args.survival, critic=critic)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -278,7 +279,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
                                      goal_as=args.goal_as, reach=args.reach, travel=args.travel,
-                                     readout=readout, survival=args.survival)  # fmt: skip
+                                     readout=readout, survival=args.survival, critic=critic)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -308,6 +309,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as, "reach": args.reach}
     config |= {"travel": args.travel, "survival": args.survival}
     config |= {"readout": None if args.readout is None else str(args.readout)}
+    config |= {"critic": None if args.critic is None else str(args.critic)}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -379,8 +381,10 @@ def _train_readout(args: argparse.Namespace) -> None:
     env = make_env(args.env, seed=args.seed)
     if not hasattr(env, "vitals"):
         raise ValueError(f"{args.env} has no vitals to read")
-    labels = [replay_vitals(env, e) for e in episodes]
-    latents = encode_episodes(bottom, episodes, device)
+    replays = [replay_vitals(env, e) for e in episodes]  # frames and labels from the same (replayed) game
+    labels = [v for _, v in replays]
+    played = [Episode(f, np.zeros(len(f) - 1, np.int64), np.zeros(len(f) - 1, np.float32)) for f, _ in replays]
+    latents = encode_episodes(bottom, played, device)
     held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out for R^2
     head = Readout(bottom.cfg.latent_dim)
     fit = [i for i in range(len(episodes)) if not held[i]]
@@ -611,6 +615,8 @@ def build_parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     pa.add_argument("--reach", type=float, default=0.5, help="both: change counts as reachable within this share")
     pa.add_argument("--readout", type=Path, default=None, help="vitals readout checkpoint (jga train-readout)")
+    pa.add_argument("--critic", type=Path, default=None,
+                    help="world model the readout reads (imagines the same actions), e.g. the HUD model")  # fmt: skip
     pa.add_argument("--survival", type=float, default=0.0, help="weight of the cost on read-out health lost")
     pa.add_argument("--travel", choices=("after", "before"), default="after",
                     help="both/blend: travel to the after-unlock picture or to the before-unlock one")  # fmt: skip

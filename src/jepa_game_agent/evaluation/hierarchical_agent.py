@@ -40,10 +40,12 @@ class HierarchicalAgent(JepaAgent):
         travel: str = "after",
         readout: Readout | None = None,
         survival: float = 0.0,
+        critic: WorldModel | None = None,
     ) -> None:
         super().__init__(
-            model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel, readout, survival
-        )
+            model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel, readout,
+            survival, critic,
+        )  # fmt: skip
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
         self.top, self.top_cfg = top.eval().to(device), top_cfg

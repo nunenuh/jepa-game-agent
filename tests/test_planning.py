@@ -109,6 +109,6 @@ def test_extra_cost_steers_the_plan_away_from_danger() -> None:
 
     wm.predictor = Exact()  # type: ignore[assignment]
     cfg = PlannerConfig(horizon=6, samples=128, elites=16, iterations=4, seed=0)
-    danger = lambda path: 10.0 * path[..., 0].clamp(min=0).sum(-1)  # noqa: E731
+    danger = lambda path, seqs: 10.0 * path[..., 0].clamp(min=0).sum(-1)  # noqa: E731
     seq = plan_to_goal(wm, torch.tensor([0.0, 0.0]), torch.tensor([3.0, 3.0]), cfg, extra_cost=danger)
     assert torch.equal(seq[:3], torch.tensor([2, 2, 2]))

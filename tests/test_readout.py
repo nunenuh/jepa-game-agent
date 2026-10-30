@@ -12,27 +12,38 @@ from jepa_game_agent.training.readout_trainer import load_readout, replay_vitals
 
 
 class _VitalEnv:
-    """Health = 9 - number of steps taken (one per step), food = 5: a stand-in for Craftax's vitals."""
+    """Health = 9 - number of steps taken (one per step), food = 5: a stand-in for Craftax's vitals.
+    The frame shows the step count; the game ends after `end` steps."""
 
-    def __init__(self) -> None:
-        self.t = 0
+    def __init__(self, end: int = 100, shape: tuple[int, ...] = (2, 2, 3)) -> None:
+        self.t, self.end, self.shape = 0, end, shape
 
     def reset(self, seed: int) -> np.ndarray:
         self.t = 0
-        return np.zeros((2, 2, 3), np.uint8)
+        return np.zeros(self.shape, np.uint8)
 
     def step(self, action: int) -> object:
+        from types import SimpleNamespace
+
         self.t += 1
-        return None
+        return SimpleNamespace(frame=np.full(self.shape, self.t, np.uint8), done=self.t >= self.end)
 
     def vitals(self) -> dict[str, object]:
         return {"health": 9 - self.t, "food": 5, "drink": 4, "energy": 3, "sleeping": False}
 
 
-def test_replay_vitals_gives_one_row_per_frame() -> None:
+def test_replay_vitals_gives_one_row_per_replayed_frame() -> None:
+    """Labels go with the replayed frames, not the recorded ones (a replay can drift from the recording)."""
     ep = Episode(np.zeros((4, 2, 2, 3), np.uint8), np.zeros(3, np.int64), np.zeros(3, np.float32), seed=7)
-    v = replay_vitals(_VitalEnv(), ep)
+    frames, v = replay_vitals(_VitalEnv(), ep)
     assert v.shape == (4, len(VITALS)) and v[:, 0].tolist() == [9, 8, 7, 6] and v[0, 1] == 5
+    assert frames.shape == (4, 2, 2, 3) and frames[:, 0, 0, 0].tolist() == [0, 1, 2, 3]
+
+
+def test_replay_vitals_stops_when_the_replayed_game_ends() -> None:
+    ep = Episode(np.zeros((6, 2, 2, 3), np.uint8), np.zeros(5, np.int64), np.zeros(5, np.float32), seed=7)
+    frames, v = replay_vitals(_VitalEnv(end=2), ep)
+    assert len(frames) == len(v) == 3 and v[:, 0].tolist() == [9, 8, 7]
 
 
 def test_readout_learns_vitals_from_latents(tmp_path: Path) -> None:
@@ -63,7 +74,10 @@ def test_cli_train_readout_and_plan_with_survival(
     cli.main(["train", "--data", str(data), "--num-actions", "5", "--latent-dim", "16", "--window", "4",
               "--steps", "1", "--batch-size", "4", "--checkpoint", str(wm)])  # fmt: skip
     real_make_env = cli.make_env
-    monkeypatch.setattr(cli, "make_env", lambda name, seed=0: _VitalEnv())
+    from jepa_game_agent.data.episodes import load_episodes
+
+    shape = load_episodes(data)[0].frames.shape[1:]
+    monkeypatch.setattr(cli, "make_env", lambda name, seed=0: _VitalEnv(shape=shape))
     capsys.readouterr()
     cli.main(["train-readout", "--data", str(data), "--bottom", str(wm), "--env", "fake", "--episodes", "5",
               "--steps", "5", "--batch-size", "8", "--checkpoint", str(head)])  # fmt: skip
@@ -71,7 +85,8 @@ def test_cli_train_readout_and_plan_with_survival(
     assert head.exists() and set(summary["r2"]) == {"health", "food", "drink", "energy"}
     monkeypatch.setattr(cli, "make_env", real_make_env)
     cli.main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
-              "--readout", str(head), "--survival", "2.0", "--resets", "1", "--budget", "3", "--goal-frames", "2",
+              "--readout", str(head), "--survival", "2.0", "--critic", str(wm), "--resets", "1", "--budget", "3",
+              "--goal-frames", "2",
               "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
     cfg = json.loads(out.read_text())["config"]
-    assert cfg["readout"] == str(head) and cfg["survival"] == 2.0
+    assert cfg["readout"] == str(head) and cfg["survival"] == 2.0 and cfg["critic"] == str(wm)

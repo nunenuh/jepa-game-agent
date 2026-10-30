@@ -15,15 +15,20 @@ from jepa_game_agent.data.episodes import Episode
 from jepa_game_agent.models.readout import VITALS, Readout
 
 
-def replay_vitals(env: Any, episode: Episode) -> NDArray[np.float32]:
-    """Replay the episode (same seed, same actions) and read the env's vitals before each action and after
-    the last: (T+1, 4) in VITALS order. Needs an env with `vitals()` (CraftaxEnv)."""
-    env.reset(episode.seed)
+def replay_vitals(env: Any, episode: Episode) -> tuple[NDArray[np.uint8], NDArray[np.float32]]:
+    """Replay the episode's seed and actions; return the replayed frames (T'+1, H, W, C) and the env's vitals
+    for each (T'+1, 4) in VITALS order, stopping if the replayed game ends early. Craftax's random events
+    (mobs) can make a replay drift from the recording, so labels must go with the replayed frames.
+    Needs an env with `vitals()` (CraftaxEnv)."""
+    frames = [np.asarray(env.reset(episode.seed), dtype=np.uint8)]
     rows = [[float(env.vitals()[k]) for k in VITALS]]
     for a in episode.actions:
-        env.step(int(a))
+        res = env.step(int(a))
+        frames.append(np.asarray(res.frame, dtype=np.uint8))
         rows.append([float(env.vitals()[k]) for k in VITALS])
-    return np.asarray(rows, dtype=np.float32)
+        if res.done:
+            break
+    return np.stack(frames), np.asarray(rows, dtype=np.float32)
 
 
 def train_readout(

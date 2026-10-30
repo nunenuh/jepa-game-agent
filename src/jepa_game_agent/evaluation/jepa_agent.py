@@ -32,6 +32,8 @@ class JepaAgent:
     starts, e.g. facing a tree with enough wood).
     readout + survival: add survival * (health lost vs now, summed over the imagined path) to every plan's
     cost, health read off the latents by `readout` (LeCun's built-in "pain" cost).
+    critic: a second world model (e.g. one that sees the status bar) that imagines the same action sequences;
+    the readout then reads health off its latents instead of the planning model's.
     """
 
     def __init__(
@@ -48,6 +50,7 @@ class JepaAgent:
         travel: str = "after",
         readout: Readout | None = None,
         survival: float = 0.0,
+        critic: WorldModel | None = None,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -64,6 +67,10 @@ class JepaAgent:
             raise ValueError("survival must be >= 0 and needs a readout")
         self.readout = None if readout is None else readout.eval().to(device)
         self.survival = survival
+        if critic is not None and readout is None:
+            raise ValueError("a critic is only read through a readout")
+        self.critic = None if critic is None else critic.eval().to(device)
+        self._critic_now: torch.Tensor | None = None
         self.goal_as, self.reach = goal_as, reach
         self._delta: torch.Tensor | None = None
         self._picture: torch.Tensor | None = None
@@ -78,10 +85,12 @@ class JepaAgent:
     def _prior(self, now: torch.Tensor) -> torch.Tensor | None:
         return None if self.prior is None else self.prior.probs(now, self.prior_mix)
 
+    def _frames_to_tensor(self, frames: Sequence[Frame]) -> torch.Tensor:
+        return torch.from_numpy(np.stack(frames)).to(self.device).permute(0, 3, 1, 2).float() / 255
+
     def _encode(self, frames: Sequence[Frame]) -> torch.Tensor:
-        x = torch.from_numpy(np.stack(frames)).to(self.device).permute(0, 3, 1, 2).float() / 255
         with torch.no_grad():
-            return self.model.encode(x)
+            return self.model.encode(self._frames_to_tensor(frames))
 
     def reset(self, goal_frames: Sequence[Frame]) -> None:
         if len(goal_frames) == 0:
@@ -110,6 +119,9 @@ class JepaAgent:
             mixed[:, : -self.hud_rows] = frame[: -self.hud_rows]
             self.goal = self._encode(list(mixed)).mean(0)
         now = self._encode([frame])[0]
+        if self.critic is not None:
+            with torch.no_grad():
+                self._critic_now = self.critic.encode(self._frames_to_tensor([frame]))[0]
         if self._delta is not None:
             self.change_goal = now + self._delta
             if self.goal_as == "change":
@@ -119,16 +131,20 @@ class JepaAgent:
                 self.goal = (self._picture + self.change_goal) / 2
         return now
 
-    def _extra(self, now: torch.Tensor) -> Callable[[torch.Tensor], torch.Tensor] | None:
-        """Survival cost for plans from `now`: health lost along the imagined path (0 if it doesn't drop)."""
+    def _extra(self, now: torch.Tensor) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None:
+        """Survival cost for plans from `now`: health lost along the imagined path (0 if it doesn't drop).
+        With a critic, the path is re-imagined by the critic from its own latent of the current frame."""
         if self.readout is None or self.survival == 0:
             return None
-        head, w = self.readout, self.survival
+        head, w, critic, c_now = self.readout, self.survival, self.critic, self._critic_now
+        start = now if critic is None or c_now is None else c_now
         with torch.no_grad():
-            h_now = head(now)[0]
+            h_now = head(start)[0]
 
-        def cost(path: torch.Tensor) -> torch.Tensor:
+        def cost(path: torch.Tensor, seqs: torch.Tensor) -> torch.Tensor:
             with torch.no_grad():
+                if critic is not None and c_now is not None:
+                    path = critic.rollout(c_now.expand(len(seqs), -1), seqs)
                 lost: torch.Tensor = w * (h_now - head(path)[..., 0]).clamp(min=0).sum(-1)
             return lost
 
