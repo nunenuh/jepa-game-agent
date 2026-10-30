@@ -384,3 +384,32 @@ player. Mean length rises only ~124 → 145–151 steps, and a stronger penalty 
 (table 38% → 24% at λ 10). With R² 0.33 the planner cannot tell an imagined hit from noise. Next: a health
 readout the world model can actually support: read the status bar with the HUD encoder (v3 HUD dims or a
 HUD stream added to v2), then retry the survival cost.
+
+## Survival cost, round 2: fixed labels (code 95d6f1b)
+
+**Label bug found:** replaying a recorded game drifts from the recording after 72–251 steps (Craftax's random
+mob events differ), so most vitals labels in the first try described a different game than the frames.
+`replay_vitals` now returns the replayed frames with their labels and stops when that game ends.
+
+| readout R² (60 held-out games) | health | food | drink | energy |
+|---|---|---|---|---|
+| v2, old labels | 0.33 | 0.35 | 0.68 | 0.31 |
+| **v2, fixed labels** | **0.62** | 0.56 | 0.78 | 0.56 |
+| v3 (HUD encoder), fixed labels | 0.14 | 0.41 | 0.82 | 0.00 |
+
+v3's HUD dims read the inventory (0.997) but not the health hearts. `--readout-model` lets a second world
+model imagine the same actions for the readout while v2 plans (used for the v3 rows below).
+
+| survival (round 9 setup, 50 worlds) | wood ×2 | table | wood ×1 | pickaxe | stone | length median (max) | died, zombie adjacent |
+|---|---|---|---|---|---|---|---|
+| none (round 9) | 46% | 38% | 10% | 0% | 0% | 124 | 50 / 50 |
+| v2 readout, λ 1 | 42% | 32% | 10% | 2% | **2%** | 134 (337) | 49 / 50 (1 full chain) |
+| v2 readout, λ 3 | 28% | 24% | 8% | 0% | 0% | 149 (288) | 50 / 50 |
+| v3 readout, λ 1 | 44% | **42%** | 10% | 2% | 0% | 143 (393) | 50 / 50 |
+| v3 readout, λ 3 | 34% | 26% | 6% | 0% | 0% | 135 (304) | 50 / 50 |
+
+**First full chain** (wood → table → wood → pickaxe → stone) in 1 of 50 worlds, and the best table rate
+(42%), but both are within a couple of worlds of round 9: not a clear gain. Every other episode still ends
+with a zombie next to the player, at a median of 134–149 steps. A health cost reacts only after the hit
+(pain, not danger), and a stronger one costs crafting steps. Next: a learned critic that predicts health
+about to be lost (`jga train-readout --danger N`, `--critic`, `--danger`, code 83f04cf).
