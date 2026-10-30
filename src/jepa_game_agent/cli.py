@@ -252,7 +252,12 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         from jepa_game_agent.training.readout_trainer import load_readout
 
         readout, _ = load_readout(args.readout, device)
-    critic = None if args.critic is None else load_checkpoint(args.critic, device)[0]
+    sense = None if args.readout_model is None else load_checkpoint(args.readout_model, device)[0]
+    critic = None
+    if args.critic is not None:
+        from jepa_game_agent.training.readout_trainer import load_readout
+
+        critic, _ = load_readout(args.critic, device)
     prior = None
     if args.prior is not None:
         from jepa_game_agent.training.prior_trainer import load_prior
@@ -262,7 +267,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     def make_agent() -> Agent:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
                          prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
-                         travel=args.travel, readout=readout, survival=args.survival, critic=critic)  # fmt: skip
+                         travel=args.travel, readout=readout, survival=args.survival, readout_model=sense,
+                         critic=critic, danger=args.danger)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -279,7 +285,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
             return HierarchicalAgent(model, top, top_cfg, cfg, device, hud_rows=args.hud_rows, bank=bank,
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
                                      goal_as=args.goal_as, reach=args.reach, travel=args.travel,
-                                     readout=readout, survival=args.survival, critic=critic)  # fmt: skip
+                                     readout=readout, survival=args.survival, readout_model=sense,
+                                     critic=critic, danger=args.danger)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -309,7 +316,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"chain": args.chain, "hud_weight": args.hud_weight, "goal_as": args.goal_as, "reach": args.reach}
     config |= {"travel": args.travel, "survival": args.survival}
     config |= {"readout": None if args.readout is None else str(args.readout)}
-    config |= {"critic": None if args.critic is None else str(args.critic)}
+    config |= {"readout_model": None if args.readout_model is None else str(args.readout_model)}
+    config |= {"critic": None if args.critic is None else str(args.critic), "danger": args.danger}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -368,7 +376,7 @@ def _train_readout(args: argparse.Namespace) -> None:
     import numpy as np
 
     from jepa_game_agent.models.readout import VITALS, Readout
-    from jepa_game_agent.training.readout_trainer import replay_vitals, save_readout, train_readout
+    from jepa_game_agent.training.readout_trainer import danger_labels, replay_vitals, save_readout, train_readout
     from jepa_game_agent.training.top_trainer import encode_episodes
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -382,11 +390,12 @@ def _train_readout(args: argparse.Namespace) -> None:
     if not hasattr(env, "vitals"):
         raise ValueError(f"{args.env} has no vitals to read")
     replays = [replay_vitals(env, e) for e in episodes]  # frames and labels from the same (replayed) game
-    labels = [v for _, v in replays]
+    labels = [v if not args.danger else danger_labels(v, args.danger) for _, v in replays]
+    names = VITALS if not args.danger else ("danger",)
     played = [Episode(f, np.zeros(len(f) - 1, np.int64), np.zeros(len(f) - 1, np.float32)) for f, _ in replays]
     latents = encode_episodes(bottom, played, device)
     held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out for R^2
-    head = Readout(bottom.cfg.latent_dim)
+    head = Readout(bottom.cfg.latent_dim, outputs=len(names))
     fit = [i for i in range(len(episodes)) if not held[i]]
     history = train_readout(head, [latents[i] for i in fit], [labels[i] for i in fit], args.steps, args.batch_size,
                             seed=args.seed, device=device)  # fmt: skip
@@ -397,7 +406,7 @@ def _train_readout(args: argparse.Namespace) -> None:
     true = np.concatenate([labels[i] for i in test])
     var = true.var(0)
     r2 = {k: (None if var[j] == 0 else float(1 - ((pred[:, j] - true[:, j]) ** 2).mean() / var[j]))
-          for j, k in enumerate(VITALS)}  # fmt: skip
+          for j, k in enumerate(names)}  # fmt: skip
     print(json.dumps({"episodes": len(episodes), "held_out": int(held.sum()), "r2": r2, "last": history[-1]}))
 
 
@@ -563,6 +572,8 @@ def build_parser() -> argparse.ArgumentParser:
     rd.add_argument("--bottom", type=Path, required=True, help="trained world model checkpoint (frozen encoder)")
     rd.add_argument("--env", default="Craftax-Classic-Pixels-v1", help="env to replay the episodes in for labels")
     rd.add_argument("--episodes", type=int, default=300, help="episodes replayed for labels (1 in 5 held out)")
+    rd.add_argument("--danger", type=int, default=0,
+                    help="train the critic: health lost within the next N steps (0: read the vitals)")  # fmt: skip
     rd.add_argument("--steps", type=int, default=5_000)
     rd.add_argument("--batch-size", type=int, default=512)
     rd.add_argument("--seed", type=int, default=0)
@@ -615,8 +626,10 @@ def build_parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     pa.add_argument("--reach", type=float, default=0.5, help="both: change counts as reachable within this share")
     pa.add_argument("--readout", type=Path, default=None, help="vitals readout checkpoint (jga train-readout)")
-    pa.add_argument("--critic", type=Path, default=None,
+    pa.add_argument("--readout-model", type=Path, default=None,
                     help="world model the readout reads (imagines the same actions), e.g. the HUD model")  # fmt: skip
+    pa.add_argument("--critic", type=Path, default=None, help="danger critic (jga train-readout --danger N)")
+    pa.add_argument("--danger", type=float, default=0.0, help="weight of the critic's expected health loss")
     pa.add_argument("--survival", type=float, default=0.0, help="weight of the cost on read-out health lost")
     pa.add_argument("--travel", choices=("after", "before"), default="after",
                     help="both/blend: travel to the after-unlock picture or to the before-unlock one")  # fmt: skip

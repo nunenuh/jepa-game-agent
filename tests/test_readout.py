@@ -8,7 +8,13 @@ import torch
 
 from jepa_game_agent.data.episodes import Episode
 from jepa_game_agent.models.readout import VITALS, Readout
-from jepa_game_agent.training.readout_trainer import load_readout, replay_vitals, save_readout, train_readout
+from jepa_game_agent.training.readout_trainer import (
+    danger_labels,
+    load_readout,
+    replay_vitals,
+    save_readout,
+    train_readout,
+)
 
 
 class _VitalEnv:
@@ -44,6 +50,22 @@ def test_replay_vitals_stops_when_the_replayed_game_ends() -> None:
     ep = Episode(np.zeros((6, 2, 2, 3), np.uint8), np.zeros(5, np.int64), np.zeros(5, np.float32), seed=7)
     frames, v = replay_vitals(_VitalEnv(end=2), ep)
     assert len(frames) == len(v) == 3 and v[:, 0].tolist() == [9, 8, 7]
+
+
+def test_danger_is_the_health_lost_within_the_next_steps() -> None:
+    """The critic's target: how much health the player loses in the next `ahead` steps (never negative)."""
+    health = np.array([9, 9, 8, 6, 6, 7, 0], np.float32)
+    vitals = np.stack([health, health * 0, health * 0, health * 0], -1)
+    d = danger_labels(vitals, ahead=2)
+    assert d.shape == (7, 1) and d[:, 0].tolist() == [1, 3, 2, 0, 6, 7, 0]
+
+
+def test_a_critic_head_has_one_output_and_reloads(tmp_path: Path) -> None:
+    head = Readout(latent_dim=4, outputs=1)
+    assert head(torch.zeros(3, 4)).shape == (3, 1)
+    save_readout(tmp_path / "c.pt", head, [])
+    again, _ = load_readout(tmp_path / "c.pt")
+    assert again(torch.zeros(1, 4)).shape == (1, 1)
 
 
 def test_readout_learns_vitals_from_latents(tmp_path: Path) -> None:
@@ -83,10 +105,16 @@ def test_cli_train_readout_and_plan_with_survival(
               "--steps", "5", "--batch-size", "8", "--checkpoint", str(head)])  # fmt: skip
     summary = json.loads(capsys.readouterr().out)
     assert head.exists() and set(summary["r2"]) == {"health", "food", "drink", "energy"}
+    critic = tmp_path / "c.pt"
+    cli.main(["train-readout", "--data", str(data), "--bottom", str(wm), "--env", "fake", "--episodes", "5",
+              "--steps", "5", "--batch-size", "8", "--danger", "3", "--checkpoint", str(critic)])  # fmt: skip
+    assert set(json.loads(capsys.readouterr().out)["r2"]) == {"danger"}
     monkeypatch.setattr(cli, "make_env", real_make_env)
     cli.main(["plan-achievement", "--checkpoint", str(wm), "--goal-data", str(data), "--achievement", "collect_item",
-              "--readout", str(head), "--survival", "2.0", "--critic", str(wm), "--resets", "1", "--budget", "3",
+              "--readout", str(head), "--survival", "2.0", "--readout-model", str(wm),
+              "--critic", str(critic), "--danger", "1.5", "--resets", "1", "--budget", "3",
               "--goal-frames", "2",
               "--horizon", "2", "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
     cfg = json.loads(out.read_text())["config"]
-    assert cfg["readout"] == str(head) and cfg["survival"] == 2.0 and cfg["critic"] == str(wm)
+    assert cfg["readout"] == str(head) and cfg["survival"] == 2.0 and cfg["readout_model"] == str(wm)
+    assert cfg["critic"] == str(critic) and cfg["danger"] == 1.5

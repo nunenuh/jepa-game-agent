@@ -32,8 +32,10 @@ class JepaAgent:
     starts, e.g. facing a tree with enough wood).
     readout + survival: add survival * (health lost vs now, summed over the imagined path) to every plan's
     cost, health read off the latents by `readout` (LeCun's built-in "pain" cost).
-    critic: a second world model (e.g. one that sees the status bar) that imagines the same action sequences;
-    the readout then reads health off its latents instead of the planning model's.
+    readout_model: a second world model (e.g. one that sees the status bar) that imagines the same action
+    sequences; the readout then reads health off its latents instead of the planning model's.
+    critic + danger: add danger * (health the critic expects to be lost soon, summed over the imagined path):
+    LeCun's trainable critic, so plans avoid what comes before pain, not only pain itself.
     """
 
     def __init__(
@@ -50,7 +52,9 @@ class JepaAgent:
         travel: str = "after",
         readout: Readout | None = None,
         survival: float = 0.0,
-        critic: WorldModel | None = None,
+        readout_model: WorldModel | None = None,
+        critic: Readout | None = None,
+        danger: float = 0.0,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -67,10 +71,14 @@ class JepaAgent:
             raise ValueError("survival must be >= 0 and needs a readout")
         self.readout = None if readout is None else readout.eval().to(device)
         self.survival = survival
-        if critic is not None and readout is None:
-            raise ValueError("a critic is only read through a readout")
+        if readout_model is not None and readout is None:
+            raise ValueError("a readout_model is only read through a readout")
+        self.readout_model = None if readout_model is None else readout_model.eval().to(device)
+        self._sense_now: torch.Tensor | None = None
+        if danger < 0 or (danger > 0 and critic is None):
+            raise ValueError("danger must be >= 0 and needs a critic")
         self.critic = None if critic is None else critic.eval().to(device)
-        self._critic_now: torch.Tensor | None = None
+        self.danger = danger
         self.goal_as, self.reach = goal_as, reach
         self._delta: torch.Tensor | None = None
         self._picture: torch.Tensor | None = None
@@ -119,9 +127,9 @@ class JepaAgent:
             mixed[:, : -self.hud_rows] = frame[: -self.hud_rows]
             self.goal = self._encode(list(mixed)).mean(0)
         now = self._encode([frame])[0]
-        if self.critic is not None:
+        if self.readout_model is not None:
             with torch.no_grad():
-                self._critic_now = self.critic.encode(self._frames_to_tensor([frame]))[0]
+                self._sense_now = self.readout_model.encode(self._frames_to_tensor([frame]))[0]
         if self._delta is not None:
             self.change_goal = now + self._delta
             if self.goal_as == "change":
@@ -132,21 +140,29 @@ class JepaAgent:
         return now
 
     def _extra(self, now: torch.Tensor) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None:
-        """Survival cost for plans from `now`: health lost along the imagined path (0 if it doesn't drop).
-        With a critic, the path is re-imagined by the critic from its own latent of the current frame."""
-        if self.readout is None or self.survival == 0:
+        """Added plan cost from `now`: survival (health lost along the imagined path, 0 if it doesn't drop; with
+        a readout_model the path is re-imagined by it from its own latent) plus danger (critic's expected loss)."""
+        survive = self.readout is not None and self.survival > 0
+        if not survive and not (self.critic is not None and self.danger > 0):
             return None
-        head, w, critic, c_now = self.readout, self.survival, self.critic, self._critic_now
-        start = now if critic is None or c_now is None else c_now
-        with torch.no_grad():
-            h_now = head(start)[0]
+        head, w, critic, dw = self.readout, self.survival, self.critic, self.danger
+        sense, s_now = self.readout_model, self._sense_now
+        h_now = None
+        if survive and head is not None:
+            with torch.no_grad():
+                h_now = head(now if sense is None or s_now is None else s_now)[0]
 
         def cost(path: torch.Tensor, seqs: torch.Tensor) -> torch.Tensor:
+            total = torch.zeros(len(seqs), device=path.device)
             with torch.no_grad():
-                if critic is not None and c_now is not None:
-                    path = critic.rollout(c_now.expand(len(seqs), -1), seqs)
-                lost: torch.Tensor = w * (h_now - head(path)[..., 0]).clamp(min=0).sum(-1)
-            return lost
+                if head is not None and h_now is not None:
+                    sensed = (
+                        path if sense is None or s_now is None else sense.rollout(s_now.expand(len(seqs), -1), seqs)
+                    )
+                    total = total + w * (h_now - head(sensed)[..., 0]).clamp(min=0).sum(-1)
+                if critic is not None and dw > 0:
+                    total = total + dw * critic(path)[..., 0].clamp(min=0).sum(-1)
+            return total
 
         return cost
 

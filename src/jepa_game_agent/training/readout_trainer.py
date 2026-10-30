@@ -31,6 +31,15 @@ def replay_vitals(env: Any, episode: Episode) -> tuple[NDArray[np.uint8], NDArra
     return np.stack(frames), np.asarray(rows, dtype=np.float32)
 
 
+def danger_labels(vitals: NDArray[np.float32], ahead: int) -> NDArray[np.float32]:
+    """The critic's target from (T+1, 4) vitals: health lost within the next `ahead` steps, (T+1, 1), >= 0."""
+    health = vitals[:, 0]
+    out = np.zeros((len(health), 1), np.float32)
+    for t in range(len(health) - 1):
+        out[t, 0] = max(0.0, float(health[t] - health[t + 1 : t + 1 + ahead].min()))
+    return out
+
+
 def train_readout(
     head: Readout,
     latents: Sequence[NDArray[Any]],
@@ -64,7 +73,7 @@ def train_readout(
 
 def save_readout(path: Path, head: Readout, history: list[dict[str, float]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    cfg = {"latent_dim": head.latent_dim, "hidden": head.hidden}
+    cfg = {"latent_dim": head.latent_dim, "hidden": head.hidden, "outputs": head.outputs}
     torch.save({"model": head.state_dict(), "cfg": cfg, "history": history}, path)
 
 

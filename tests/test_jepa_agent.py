@@ -226,8 +226,27 @@ def test_survival_cost_can_read_health_off_a_second_world_model() -> None:
     env = make_env()
     env.reset(seed=0)
     cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
-    agent = JepaAgent(exact_model(), cfg, readout=Hurts(2), survival=5.0, critic=critic)
+    agent = JepaAgent(exact_model(), cfg, readout=Hurts(2), survival=5.0, readout_model=critic)
     agent.reset([env.set_agent(3, 3)])
     assert agent.act(env.set_agent(0, 0)) == 4
     with pytest.raises(ValueError):
-        JepaAgent(exact_model(), cfg, critic=critic)  # a critic is only read through a readout
+        JepaAgent(exact_model(), cfg, readout_model=critic)  # only read through a readout
+
+
+def test_danger_cost_avoids_futures_the_critic_calls_dangerous() -> None:
+    """The critic predicts health about to be lost; it rises with the column (going right is dangerous), so the
+    agent heads down to (3, 0) first, before any health is actually lost."""
+    from jepa_game_agent.models.readout import Readout
+
+    class Danger(Readout):
+        def forward(self, z: torch.Tensor) -> torch.Tensor:
+            return 2 * z[..., 1:2]
+
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, critic=Danger(2, outputs=1), danger=5.0)
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 4
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, danger=1.0)  # danger needs a critic
