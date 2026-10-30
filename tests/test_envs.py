@@ -56,3 +56,26 @@ def test_craftax_env() -> None:
     vit = env.vitals()  # type: ignore[attr-defined]
     assert vit["health"] == 9 and vit["in_lava"] is False and vit["zombies_near"] >= 0
     assert {"food", "drink", "energy", "sleeping", "light", "zombies_alive"} <= set(vit)
+
+
+@pytest.mark.craftax
+def test_craftax_zombie_tiles_match_where_the_zombie_is_drawn() -> None:
+    """zombie_tiles(): (7, 9) view grid, player at (3, 4); a zombie one tile right of the player is at (3, 5),
+    and that is the tile whose pixels change when it is drawn."""
+    pytest.importorskip("craftax")
+    import jax.numpy as jnp
+
+    env = make_env("Craftax-Classic-Pixels-v1")
+    env.reset(seed=0)
+    st = env.state  # type: ignore[attr-defined]
+    z = st.zombies
+    none = z.replace(mask=jnp.zeros_like(z.mask))
+    empty = env.set_state(st.replace(zombies=none))  # type: ignore[attr-defined]
+    assert not env.zombie_tiles().any()  # type: ignore[attr-defined]
+    pos = z.position.at[0].set(st.player_position + jnp.array([0, 1]))
+    one = z.replace(position=pos, mask=jnp.zeros_like(z.mask).at[0].set(True))
+    frame = env.set_state(st.replace(zombies=one))  # type: ignore[attr-defined]
+    tiles = env.zombie_tiles()  # type: ignore[attr-defined]
+    assert tiles.shape == (7, 9) and tiles.sum() == 1 and tiles[3, 5]
+    diff = np.abs(frame.astype(int) - empty.astype(int)).sum(-1)
+    assert diff[21:28, 35:42].sum() > 0 and diff[:49].sum() == diff[21:28, 35:42].sum()

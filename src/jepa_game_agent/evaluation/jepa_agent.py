@@ -11,6 +11,7 @@ from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.envs.base import Frame
 from jepa_game_agent.models.prior import ActionPrior
 from jepa_game_agent.models.readout import Readout
+from jepa_game_agent.models.threat import ThreatHead
 from jepa_game_agent.models.world_model import WorldModel
 from jepa_game_agent.planning.cem import plan_to_goal
 
@@ -36,6 +37,8 @@ class JepaAgent:
     sequences; the readout then reads health off its latents instead of the planning model's.
     critic + danger: add danger * (health the critic expects to be lost soon, summed over the imagined path):
     LeCun's trainable critic, so plans avoid what comes before pain, not only pain itself.
+    threat + threat_weight: add threat_weight * (probability of a zombie on threat_tiles, the tiles next to the
+    player, summed over the imagined path), read off imagined tile tokens by the per-tile threat head.
     """
 
     def __init__(
@@ -55,6 +58,9 @@ class JepaAgent:
         readout_model: WorldModel | None = None,
         critic: Readout | None = None,
         danger: float = 0.0,
+        threat: ThreatHead | None = None,
+        threat_weight: float = 0.0,
+        threat_tiles: Sequence[int] = (),
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -79,6 +85,10 @@ class JepaAgent:
             raise ValueError("danger must be >= 0 and needs a critic")
         self.critic = None if critic is None else critic.eval().to(device)
         self.danger = danger
+        if threat_weight < 0 or (threat_weight > 0 and (threat is None or not threat_tiles)):
+            raise ValueError("threat_weight must be >= 0 and needs a threat head and threat_tiles")
+        self.threat = None if threat is None else threat.eval().to(device)
+        self.threat_weight, self.threat_tiles = threat_weight, list(threat_tiles)
         self.goal_as, self.reach = goal_as, reach
         self._delta: torch.Tensor | None = None
         self._picture: torch.Tensor | None = None
@@ -143,7 +153,8 @@ class JepaAgent:
         """Added plan cost from `now`: survival (health lost along the imagined path, 0 if it doesn't drop; with
         a readout_model the path is re-imagined by it from its own latent) plus danger (critic's expected loss)."""
         survive = self.readout is not None and self.survival > 0
-        if not survive and not (self.critic is not None and self.danger > 0):
+        threat, tw, tiles = self.threat, self.threat_weight, self.threat_tiles
+        if not survive and not (self.critic is not None and self.danger > 0) and not (threat is not None and tw > 0):
             return None
         head, w, critic, dw = self.readout, self.survival, self.critic, self.danger
         sense, s_now = self.readout_model, self._sense_now
@@ -162,6 +173,8 @@ class JepaAgent:
                     total = total + w * (h_now - head(sensed)[..., 0]).clamp(min=0).sum(-1)
                 if critic is not None and dw > 0:
                     total = total + dw * critic(path)[..., 0].clamp(min=0).sum(-1)
+                if threat is not None and tw > 0:
+                    total = total + tw * torch.sigmoid(threat(path)[..., tiles]).sum((-1, -2))
             return total
 
         return cost

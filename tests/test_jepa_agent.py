@@ -250,3 +250,22 @@ def test_danger_cost_avoids_futures_the_critic_calls_dangerous() -> None:
     assert agent.act(env.set_agent(0, 0)) == 4
     with pytest.raises(ValueError):
         JepaAgent(exact_model(), cfg, danger=1.0)  # danger needs a critic
+
+
+def test_threat_cost_avoids_imagined_futures_with_danger_next_to_the_player() -> None:
+    """The threat head says 'zombie' on the watched tile once the column reaches 2 (going right is dangerous):
+    the agent heads down to (3, 0) first."""
+    from jepa_game_agent.models.threat import ThreatHead
+
+    class Zombies(ThreatHead):
+        def forward(self, z: torch.Tensor) -> torch.Tensor:
+            return 10 * (z[..., 1:2] - 1.5)  # one 'tile' token per latent
+
+    env = make_env()
+    env.reset(seed=0)
+    cfg = PlannerConfig(horizon=4, samples=128, elites=16, iterations=4)
+    agent = JepaAgent(exact_model(), cfg, threat=Zombies(token_dim=2), threat_weight=5.0, threat_tiles=[0])
+    agent.reset([env.set_agent(3, 3)])
+    assert agent.act(env.set_agent(0, 0)) == 4
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, threat_weight=1.0)  # needs a threat head and tiles

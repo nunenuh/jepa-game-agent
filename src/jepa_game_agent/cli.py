@@ -258,6 +258,16 @@ def _plan_achievement(args: argparse.Namespace) -> None:
 
         readout, _ = load_readout(args.readout, device)
     sense = None if args.readout_model is None else load_checkpoint(args.readout_model, device)[0]
+    threat, threat_tiles = None, []
+    if args.threat is not None:
+        from jepa_game_agent.models.threat import around
+        from jepa_game_agent.training.threat_trainer import load_threat
+
+        if not model.cfg.grid:
+            raise ValueError("--threat needs a spatial (--grid) world model")
+        threat, _ = load_threat(args.threat, device)
+        view = env.zombie_tiles().shape if hasattr(env, "zombie_tiles") else (model.cfg.grid, model.cfg.grid)
+        threat_tiles = around(model.cfg.grid, (view[0] // 2, view[1] // 2))
     critic = None
     if args.critic is not None:
         from jepa_game_agent.training.readout_trainer import load_readout
@@ -273,7 +283,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         return JepaAgent(model, cfg, device, hud_rows=args.hud_rows, weights=weights, prior=prior,
                          prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
                          travel=args.travel, readout=readout, survival=args.survival, readout_model=sense,
-                         critic=critic, danger=args.danger)  # fmt: skip
+                         critic=critic, danger=args.danger, threat=threat, threat_weight=args.threat_weight,
+                         threat_tiles=threat_tiles)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -291,7 +302,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                                      weights=weights, prior=prior, prior_mix=args.prior_mix,
                                      goal_as=args.goal_as, reach=args.reach, travel=args.travel,
                                      readout=readout, survival=args.survival, readout_model=sense,
-                                     critic=critic, danger=args.danger)  # fmt: skip
+                                     critic=critic, danger=args.danger, threat=threat, threat_weight=args.threat_weight,
+                         threat_tiles=threat_tiles)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -324,6 +336,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"readout": None if args.readout is None else str(args.readout)}
     config |= {"readout_model": None if args.readout_model is None else str(args.readout_model)}
     config |= {"critic": None if args.critic is None else str(args.critic), "danger": args.danger}
+    config |= {"threat": None if args.threat is None else str(args.threat), "threat_weight": args.threat_weight}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -424,6 +437,51 @@ def _train_readout(args: argparse.Namespace) -> None:
     r2 = {k: (None if var[j] == 0 else float(1 - ((pred[:, j] - true[:, j]) ** 2).mean() / var[j]))
           for j, k in enumerate(names)}  # fmt: skip
     print(json.dumps({"episodes": len(episodes), "held_out": int(held.sum()), "r2": r2, "last": history[-1]}))
+
+
+def _train_threat(args: argparse.Namespace) -> None:
+    import numpy as np
+
+    from jepa_game_agent.models.threat import ThreatHead, around
+    from jepa_game_agent.training.threat_trainer import rank_auc, replay_threats, save_threat, train_threat
+    from jepa_game_agent.training.top_trainer import encode_episodes
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bottom, _ = load_checkpoint(args.bottom, device)
+    if not bottom.cfg.grid:
+        raise ValueError("the threat head needs a spatial (--grid) world model")
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    rng = np.random.default_rng(args.seed)
+    episodes = [episodes[i] for i in sorted(rng.permutation(len(episodes))[: args.episodes])]
+    env = make_env(args.env, seed=args.seed)
+    if not hasattr(env, "zombie_tiles"):
+        raise ValueError(f"{args.env} has no zombie positions to read")
+    grid = bottom.cfg.grid
+    replays = [replay_threats(env, e, grid) for e in episodes]  # frames and labels from the same replayed game
+    played = [Episode(f, np.zeros(len(f) - 1, np.int64), np.zeros(len(f) - 1, np.float32)) for f, _ in replays]
+    latents = encode_episodes(bottom, played, device)
+    maps = [m for _, m in replays]
+    held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out
+    fit = [i for i in range(len(episodes)) if not held[i]]
+    head = ThreatHead(bottom.cfg.token_dim)
+    history = train_threat(head, [latents[i] for i in fit], [maps[i] for i in fit], args.steps, args.batch_size,
+                           seed=args.seed, device=device)  # fmt: skip
+    save_threat(args.checkpoint, head, history)
+    test = [i for i in range(len(episodes)) if held[i]] or fit
+    with torch.no_grad():
+        z = torch.from_numpy(np.concatenate([latents[i] for i in test])).float().to(device)
+        p = torch.sigmoid(head(z)).cpu().numpy()
+    y = np.concatenate([maps[i] for i in test])
+    view = env.zombie_tiles().shape
+    near = around(grid, (int(view[0]) // 2, int(view[1]) // 2))  # the player's 8 neighbours
+    adj_y, adj_p = y[:, near].max(1), p[:, near].max(1)
+    summary = {"episodes": len(episodes), "held_out": int(held.sum()), "last": history[-1],
+               "tile_auc": rank_auc(p.reshape(-1), y.reshape(-1)) if 0 < y.mean() < 1 else None,
+               "adjacent_auc": rank_auc(adj_p, adj_y) if 0 < adj_y.mean() < 1 else None,
+               "adjacent_share": float(adj_y.mean())}  # fmt: skip
+    print(json.dumps(summary))
 
 
 def _action_effects(args: argparse.Namespace) -> None:
@@ -601,6 +659,18 @@ def build_parser() -> argparse.ArgumentParser:
     rd.add_argument("--seed", type=int, default=0)
     rd.add_argument("--checkpoint", type=Path, required=True)
     rd.set_defaults(func=_train_readout)
+
+    th = sub.add_parser("train-threat", help="threat sense: per-tile 'zombie here?' head on a spatial world model")
+    th.add_argument("--data", type=Path, nargs="+", required=True)
+    th.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    th.add_argument("--bottom", type=Path, required=True, help="spatial (--grid) world model checkpoint (frozen)")
+    th.add_argument("--env", default="Craftax-Classic-Pixels-v1", help="env to replay the episodes in for labels")
+    th.add_argument("--episodes", type=int, default=300, help="episodes replayed for labels (1 in 5 held out)")
+    th.add_argument("--steps", type=int, default=2_000)
+    th.add_argument("--batch-size", type=int, default=512)
+    th.add_argument("--seed", type=int, default=0)
+    th.add_argument("--checkpoint", type=Path, required=True)
+    th.set_defaults(func=_train_threat)
     fx = sub.add_parser("action-effects", help="does the model know what an action does? rank the true action")
     fx.add_argument("--checkpoint", type=Path, required=True)
     fx.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games with the transitions")
@@ -653,6 +723,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="world model the readout reads (imagines the same actions), e.g. the HUD model")  # fmt: skip
     pa.add_argument("--critic", type=Path, default=None, help="danger critic (jga train-readout --danger N)")
     pa.add_argument("--danger", type=float, default=0.0, help="weight of the critic's expected health loss")
+    pa.add_argument("--threat", type=Path, default=None, help="threat head (jga train-threat), spatial models only")
+    pa.add_argument("--threat-weight", type=float, default=0.0, help="weight of imagined zombies next to the player")
     pa.add_argument("--survival", type=float, default=0.0, help="weight of the cost on read-out health lost")
     pa.add_argument("--travel", choices=("after", "before"), default="after",
                     help="both/blend: travel to the after-unlock picture or to the before-unlock one")  # fmt: skip

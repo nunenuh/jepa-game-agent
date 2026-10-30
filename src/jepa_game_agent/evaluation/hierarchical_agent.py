@@ -16,6 +16,7 @@ from jepa_game_agent.envs.base import Frame
 from jepa_game_agent.evaluation.jepa_agent import JepaAgent
 from jepa_game_agent.models.prior import ActionPrior
 from jepa_game_agent.models.readout import Readout
+from jepa_game_agent.models.threat import ThreatHead
 from jepa_game_agent.models.top import TopModel
 from jepa_game_agent.models.world_model import WorldModel
 from jepa_game_agent.planning.cem import plan_to_goal
@@ -43,10 +44,13 @@ class HierarchicalAgent(JepaAgent):
         readout_model: WorldModel | None = None,
         critic: Readout | None = None,
         danger: float = 0.0,
+        threat: ThreatHead | None = None,
+        threat_weight: float = 0.0,
+        threat_tiles: Sequence[int] = (),
     ) -> None:
         super().__init__(
             model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel, readout,
-            survival, readout_model, critic, danger,
+            survival, readout_model, critic, danger, threat, threat_weight, threat_tiles,
         )  # fmt: skip
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
