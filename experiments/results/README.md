@@ -480,3 +480,22 @@ The action prior trained as before (loss 2.11). The top model needed `--width 25
 reasonable time; the narrow one trained in 7 minutes (final loss 0.23). The v4 health readout as trained by
 `jga train-readout` (MLP, 1000 steps) scores R² 0.52 / food 0.52 / drink 0.81 / energy 0.35, below the
 random forest's 0.74 on the same latent: the MLP head overfits the 2592 inputs.
+
+## Threat sense on v4 (code 66f719a, fcfb94e)
+
+`jga train-threat`: zombie positions per tile (`CraftaxEnv.zombie_tiles`, placed like the renderer, tested
+on the real game) from 300 replayed games train a small head on frozen v4 tile tokens; 1 in 5 games held out.
+"Adjacent" = a zombie on one of the 8 tiles around the player (9.6% of frames).
+
+| threat head | adjacent AUC | per-tile AUC |
+|---|---|---|
+| one token per tile (MLP) | 0.65–0.72 | 0.83–0.87 |
+| one token per tile, positives weighted 10× | 0.86 | 0.93 |
+| **3×3 neighbourhood of tokens (conv), official** | **0.967** | **0.975** |
+| random forest on the whole v4 latent (earlier) | 0.84 | — |
+| raw pixels (ceiling, earlier) | 0.99 | — |
+
+The v4 encoder spreads a zombie over neighbouring tile tokens, so each tile must be read with its
+neighbours. Read this way, v4 sees adjacent zombies almost as well as the pixels do. In the planner,
+`--threat-weight λ` adds λ × (imagined zombie probability on the 8 tiles around the player), summed over each
+imagined path. Labels only train the head; behaviour still comes from planning.
