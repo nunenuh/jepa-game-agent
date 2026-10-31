@@ -323,8 +323,18 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                 raise ValueError(f"{args.env} has no inventory to count items in")
             counts = lambda e: e.inventory()  # noqa: E731
         probe = (lambda e: e.vitals()) if hasattr(env, "vitals") else None  # what killed the player
+        saved = args.out.with_suffix(".worlds.jsonl")  # each world as it ends: a cut-off run loses one world
+        resume = [json.loads(line) for line in saved.read_text().splitlines()] if args.resume and saved.exists() else []
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_text("".join(json.dumps(w) + "\n" for w in resume))
+
+        def keep(done: int, total: int, world: dict[str, object]) -> None:
+            with saved.open("a") as f:
+                f.write(json.dumps(world) + "\n")
+            _print_progress(done, total, world)
+
         res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe,
-                             progress=_print_progress)  # fmt: skip
+                             progress=keep, resume=resume)  # fmt: skip
     for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
@@ -732,6 +742,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument(
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"
     )
+    pa.add_argument("--resume", action="store_true", help="--chain: skip worlds already in <out>.worlds.jsonl")
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p

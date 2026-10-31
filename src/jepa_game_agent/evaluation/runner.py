@@ -127,20 +127,24 @@ def evaluate_chain(
     counts: Callable[[GameEnv], Mapping[str, int]] | None = None,
     probe: Callable[[GameEnv], Mapping[str, Any]] | None = None,
     progress: Callable[[int, int, dict[str, Any]], None] | None = None,
+    resume: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Pursue the chain's stages in order, each given as its goal frames; the agent is handed the first stage
     not yet done (one already done when reached is skipped; done stays done). Success = every stage done
     within the budget. counts(env) -> inventory, needed for stages that count items. probe(env) -> what to
     record about the world when each episode ends (e.g. vitals, to see what killed the player).
-    progress(done, total, world): called after each world (long runs show how far they got)."""
+    progress(done, total, world): called after each world with its full record (long runs show how far they
+    got and can save it). resume: records of the first worlds from an earlier, cut-off run; those are skipped."""
     stages = [c if isinstance(c, ChainStage) else ChainStage(*c) for c in chain]
     if not stages:
         raise ValueError("empty chain")
     if counts is None and any(st.item is not None for st in stages):
         raise ValueError("stages that count items need counts(env)")
+    if len(resume) > len(tasks):
+        raise ValueError(f"{len(resume)} saved worlds but only {len(tasks)} tasks")
     labels = [st.label for st in stages]
-    successes, steps, reached, unlocked, lengths, ended, end_state = [], [], [], [], [], [], []
-    for task in tasks:
+    worlds = [dict(w) for w in resume]
+    for task in tasks[len(worlds) :]:
         env = make_env()
         frame = env.reset(task.seed)
         agent = make_agent(task)
@@ -163,27 +167,25 @@ def evaluate_chain(
             if result.done:  # Craftax: the player died
                 how = "done"
                 break
-        lengths.append(step)
-        ended.append(how)
-        end_state.append(None if probe is None else dict(probe(env)))
-        successes.append(hit is not None)
-        steps.append(hit)
-        reached.append(labels[:stage])
-        unlocked.append(got)
+        world = {"success": hit is not None, "steps": hit, "reached": labels[:stage], "unlocked": got,
+                 "length": step, "ended": how, "end_state": None if probe is None else dict(probe(env))}  # fmt: skip
+        worlds.append(world)
         if progress is not None:
-            progress(len(lengths), len(tasks), {"length": step, "ended": how, "reached": labels[:stage]})
+            progress(len(worlds), len(tasks), world)
     n = len(tasks)
+    successes = [w["success"] for w in worlds]
+    reached = [w["reached"] for w in worlds]
     return {
         "family": "chain",
         "chain": labels,
         "tasks": n,
         "success_rate": sum(successes) / n if n else 0.0,
         "successes": successes,
-        "steps_to_success": steps,
+        "steps_to_success": [w["steps"] for w in worlds],
         "reached": reached,
-        "unlocked": unlocked,
-        "lengths": lengths,
-        "ended": ended,
-        "end_state": end_state,
+        "unlocked": [w["unlocked"] for w in worlds],
+        "lengths": [w["length"] for w in worlds],
+        "ended": [w["ended"] for w in worlds],
+        "end_state": [w["end_state"] for w in worlds],
         "stage_rates": {lb: sum(lb in r for r in reached) / n if n else 0.0 for lb in labels},
     }

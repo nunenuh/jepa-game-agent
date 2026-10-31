@@ -180,6 +180,22 @@ def test_chain_reports_progress_after_each_world() -> None:
     assert [(d, t) for d, t, _ in seen] == [(1, 3), (2, 3), (3, 3)] and all(n == 5 for _, _, n in seen)
 
 
+def test_chain_resumes_from_saved_worlds() -> None:
+    """Each world's full record goes to progress; feeding saved records back as resume skips those worlds
+    and gives the same result as one uninterrupted run (a cut-off runtime loses one world, not the run)."""
+    chain = [(n, [np.full((2, 2, 3), i, np.uint8)]) for i, n in enumerate(("a", "b"))]
+    tasks = [AchievementTask("b", seed=s, budget=5) for s in range(3)]
+    saved: list[dict[str, object]] = []
+    full = evaluate_chain(lambda: _ScriptedEnv({2: ("a",)}), tasks, lambda t: _GoalLog(), chain,
+                          progress=lambda d, t, world: saved.append(world))  # fmt: skip
+    played: list[int] = []
+    rest = evaluate_chain(lambda: _ScriptedEnv({2: ("a",)}), tasks, lambda t: _GoalLog(), chain, resume=saved[:2],
+                          progress=lambda d, t, world: played.append(d))  # fmt: skip
+    assert played == [3] and rest == full
+    with pytest.raises(ValueError):
+        evaluate_chain(lambda: _ScriptedEnv({}), tasks[:1], lambda t: _GoalLog(), chain, resume=saved)
+
+
 class _InventoryEnv(_ScriptedEnv):
     """Also scripts the wood count per step: {step: wood}."""
 

@@ -93,6 +93,15 @@ def test_cli_plan_achievement_chain(tmp_path: Path, capsys: pytest.CaptureFixtur
     r = res["chain"]["jepa"]
     assert r["tasks"] == 2 and r["chain"] == ["collect_item"] and res["config"]["chain"] is True
     assert json.loads(capsys.readouterr().out) == r["stage_rates"]
+    saved = out.with_suffix(".worlds.jsonl")  # one line per finished world, written as it ends
+    assert [json.loads(line)["length"] for line in saved.read_text().splitlines()] == r["lengths"]
+    saved.write_text(saved.read_text().splitlines()[0] + "\n")  # as if the runtime died after world 1
+    main(["plan-achievement", "--chain", "--resume", "--checkpoint", str(wm), "--goal-data", str(data),
+          "--achievement", "collect_item", "--resets", "2", "--budget", "5", "--goal-frames", "2", "--horizon", "2",
+          "--samples", "8", "--elites", "2", "--iterations", "1", "--out", str(out)])  # fmt: skip
+    again = json.loads(out.read_text())["chain"]["jepa"]
+    assert again["tasks"] == 2 and again["lengths"][0] == r["lengths"][0]
+    assert len(saved.read_text().splitlines()) == 2
 
 
 def test_cli_train_prior_then_plan_with_it(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
