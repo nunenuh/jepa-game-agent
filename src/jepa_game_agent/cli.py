@@ -484,7 +484,7 @@ def _memory_check(args: argparse.Namespace) -> None:
     if not hasattr(env, "position") or not hasattr(env, "block_map"):
         raise ValueError(f"{args.env} can't tell the true position and blocks needed to score the memory")
 
-    def encode(frames: np.ndarray) -> torch.Tensor:
+    def encode(frames: np.ndarray[Any, Any]) -> torch.Tensor:
         with torch.no_grad():
             x = torch.from_numpy(frames).to(device).permute(0, 3, 1, 2).float() / 255
             return model.encode(x).cpu()
