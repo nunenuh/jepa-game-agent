@@ -21,7 +21,8 @@ chains)
     R="--chain --resume --goal-data $S/ppo_00.npz $S/ppo_01.npz $S/ppo_02.npz --goal-split train
        --achievement collect_wood:2 place_table collect_wood:1 make_wood_pickaxe collect_stone
        --resets 50 --budget 400 --env Craftax-Classic-Pixels-v1 --prior $O/prior_v4.pt
-       --goal-as both --travel before --reach 0.5 --checkpoint $M --top $O/top_v4.pt --top-horizon 5 $FAST"
+       --goal-as both --travel before --reach 0.5 --checkpoint $M --top $O/top_v4.pt --top-horizon 5 $FAST
+       --record 3"  # first 3 worlds saved to <out>.play.npz: jga render makes GIFs
     run() {  # name, extra flags
         [ -f "$O/$1.json" ] && { echo "$1 done"; return; }
         # shellcheck disable=SC2086

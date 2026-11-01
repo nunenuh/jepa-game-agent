@@ -249,6 +249,11 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     if args.goal_split != "all":
         goal_eps = [e for e in goal_eps if split_of(e.seed) == args.goal_split]
     env = make_env(args.env, seed=args.seed)
+    if args.record:
+        from jepa_game_agent.envs.recording import RecordingEnv
+
+        env = RecordingEnv(env, args.record)
+    play = args.out.with_suffix(".play.npz")
     name = "jepa"
 
     weights = goal_weights(model.cfg, args.goal_on, args.hud_weight)
@@ -312,6 +317,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         raise ValueError("item counts (collect_x:n) only work with --chain")
     goals = {a: goal_fn(goal_eps, a, n=args.goal_frames, seed=args.seed) for a, _, _ in parsed}
     if args.chain:  # one run per world, subgoals in the given order
+        from jepa_game_agent.envs.recording import RecordingEnv
         from jepa_game_agent.evaluation.runner import ChainStage
 
         last = parsed[-1][0]
@@ -331,6 +337,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         def keep(done: int, total: int, world: dict[str, object]) -> None:
             with saved.open("a") as f:
                 f.write(json.dumps(world) + "\n")
+            if isinstance(env, RecordingEnv) and done <= args.record:
+                save_episodes(play, env.episodes())
             _print_progress(done, total, world)
 
         res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe,
@@ -359,6 +367,8 @@ def _plan_achievement(args: argparse.Namespace) -> None:
         print(json.dumps(res["stage_rates"]))
         return
     args.out.write_text(json.dumps({"achievement": results, "config": config, "commit": git_commit()}, indent=1))
+    if args.record:
+        save_episodes(play, env.episodes())  # type: ignore[attr-defined]
     print(json.dumps({a: r[name]["success_rate"] for a, r in results.items()}))  # type: ignore[index]
 
 
@@ -447,6 +457,27 @@ def _train_readout(args: argparse.Namespace) -> None:
     r2 = {k: (None if var[j] == 0 else float(1 - ((pred[:, j] - true[:, j]) ** 2).mean() / var[j]))
           for j, k in enumerate(names)}  # fmt: skip
     print(json.dumps({"episodes": len(episodes), "held_out": int(held.sum()), "r2": r2, "last": history[-1]}))
+
+
+def _render(args: argparse.Namespace) -> None:
+    from jepa_game_agent.evaluation.render import render_frames, save_gif
+
+    episode = load_episodes(args.data)[args.episode]
+    threat = None
+    if args.threat is not None:
+        from jepa_game_agent.training.threat_trainer import load_threat
+        from jepa_game_agent.training.top_trainer import encode_episodes
+
+        if args.checkpoint is None:
+            raise ValueError("--threat needs --checkpoint (the spatial world model it reads)")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _ = load_checkpoint(args.checkpoint, device)
+        head, _ = load_threat(args.threat, device)
+        z = torch.from_numpy(encode_episodes(model, [episode], device)[0]).float().to(device)
+        with torch.no_grad():
+            threat = torch.sigmoid(head(z)).cpu().numpy()
+    save_gif(render_frames(episode.frames, threat=threat, scale=args.scale), args.out, fps=args.fps)
+    print(json.dumps({"frames": len(episode.frames), "achievements": list(episode.achievements), "out": str(args.out)}))
 
 
 def _train_threat(args: argparse.Namespace) -> None:
@@ -681,6 +712,15 @@ def build_parser() -> argparse.ArgumentParser:
     th.add_argument("--seed", type=int, default=0)
     th.add_argument("--checkpoint", type=Path, required=True)
     th.set_defaults(func=_train_threat)
+    rn = sub.add_parser("render", help="watch a recorded or played episode as a GIF (threat view in red)")
+    rn.add_argument("--data", type=Path, required=True, help="episodes file, e.g. <out>.play.npz")
+    rn.add_argument("--episode", type=int, default=0)
+    rn.add_argument("--checkpoint", type=Path, help="spatial world model, for --threat")
+    rn.add_argument("--threat", type=Path, help="threat head: show each tile's zombie probability")
+    rn.add_argument("--scale", type=int, default=6)
+    rn.add_argument("--fps", type=int, default=8)
+    rn.add_argument("--out", type=Path, required=True)
+    rn.set_defaults(func=_render)
     fx = sub.add_parser("action-effects", help="does the model know what an action does? rank the true action")
     fx.add_argument("--checkpoint", type=Path, required=True)
     fx.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games with the transitions")
@@ -743,6 +783,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--chain", action="store_true", help="one run per world: pursue the achievements in order, as subgoals"
     )
     pa.add_argument("--resume", action="store_true", help="--chain: skip worlds already in <out>.worlds.jsonl")
+    pa.add_argument("--record", type=int, default=0, help="save the first N worlds played to <out>.play.npz")
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p
