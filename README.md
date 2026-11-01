@@ -42,9 +42,30 @@ Minecraft-like game written in JAX: fast enough to generate millions of
 frames on one GPU, rich enough to need long plans (wood → table → pickaxe →
 stone → ...).
 
-Status: **phase 1 done (data, PPO player, [baselines](experiments/results/README.md)); phase 2 (train the JEPA world model) next.** The plan:
-[docs/PLAN.md](docs/PLAN.md) · what each part does: [docs/SPECS.md](docs/SPECS.md)
-· progress: [ROADMAP.md](ROADMAP.md).
+## Where it stands (phase 3: crafting)
+
+What the agent does at play time. It sees pixels only; game-state labels only train the small heads and
+score results, and the world model never sees a reward.
+
+```
+screen ──► encoder ──► 9×9 tile latents ──► CEM planner: imagine many action sequences with the predictor
+                                                │   cost = distance to the next goal picture
+goal pictures (wood ×2 → table → pickaxe ...) ──┘        + λ × imagined zombie next to me (threat head)
+                                                │   top model plans 4-step chunks, action prior guides the search
+                                                ▼
+                                       first action of the best sequence ──► game ──► next screen
+```
+
+| | v2 (one 128-number latent) | v4 (one latent per tile) |
+|---|---|---|
+| sees an adjacent zombie (AUC) | 0.65 | **0.967** |
+| reach a goal picture, K = 5 / 10 steps | 32% / 25% | **51% / 35%** |
+| chain: place a table (round 9 setup) | 38% | rerun 2026-11-04 |
+| episode length, median | 124 steps | ~150–174 (partial run) |
+
+Zombies cause nearly every death, so v4 was built to see them. Details, every run and the failures:
+[experiments/results](experiments/results/README.md) · plan: [docs/PLAN.md](docs/PLAN.md) · v4 design:
+[docs/DESIGN_V4.md](docs/DESIGN_V4.md) · progress: [ROADMAP.md](ROADMAP.md).
 
 ## Code
 
@@ -53,12 +74,14 @@ src/jepa_game_agent/
   config.py        validated settings (model, training, planner)
   envs/            GameEnv interface · GridWorld (tests, CPU) · CraftaxEnv (JAX, optional)
   data/            collect, save/load episodes, training windows
-  models/          Encoder · causal action-conditioned Predictor · SIGReg · WorldModel
-  planning/        categorical CEM · plan_to_goal over imagined latents
+  models/          Encoder · SpatialEncoder (v4 tiles) · Predictors · SIGReg · WorldModel
+                   top model · action prior · readout/critic heads · ThreatHead
+  planning/        categorical CEM · plan_to_goal · two-level planning
+  evaluation/      JEPA and hierarchical agents · reach / achievement / chain runners · probes
   memory/          LatentMemory: remember latents, find them again
   surprise.py      SurpriseMeter: "that can't happen" scores
-  training/        resumable training loop (Colab sessions end)
-  cli.py           jga collect / jga train
+  training/        resumable loops: world model, top, prior, readout, threat
+  cli.py           jga collect · train · train-top/prior/readout/threat · plan · plan-achievement · ...
 tests/             unit tests, CPU-only, seconds
 ```
 
