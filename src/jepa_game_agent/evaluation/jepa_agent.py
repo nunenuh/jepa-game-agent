@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 import torch
@@ -95,7 +96,7 @@ class JepaAgent:
         self.change_goal: torch.Tensor | None = None
         self.model, self.cfg, self.device, self.hud_rows = model.eval().to(device), cfg, device, hud_rows
         self.goal: torch.Tensor | None = None
-        self._goal_frames: np.ndarray | None = None
+        self._goal_frames: np.ndarray[Any, Any] | None = None
         self.weights = None if weights is None else weights.to(device)
         self.prior = None if prior is None else prior.eval().to(device)
         self.prior_mix = prior_mix

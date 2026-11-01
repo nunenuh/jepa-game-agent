@@ -8,6 +8,7 @@ import dataclasses
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -542,7 +543,7 @@ def _action_effects(args: argparse.Namespace) -> None:
     eps = pick([e for path in args.data for e in load_episodes(path)], args.split)
     goal_eps = pick([e for path in args.goal_data for e in load_episodes(path)], args.goal_split)
 
-    def enc(frames: list[np.ndarray]) -> torch.Tensor:
+    def enc(frames: list[np.ndarray[Any, Any]]) -> torch.Tensor:
         x = torch.from_numpy(np.stack(frames)).to(device).permute(0, 3, 1, 2).float() / 255
         with torch.no_grad():
             return model.encode(x)

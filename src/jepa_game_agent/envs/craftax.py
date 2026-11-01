@@ -84,7 +84,7 @@ class CraftaxEnv:
             "zombies_near": int((alive & (dist <= 1)).sum()),
         }
 
-    def zombie_tiles(self) -> np.ndarray:
+    def zombie_tiles(self) -> np.ndarray[Any, Any]:
         """(7, 9) bool grid of the world view (player at row 3, col 4): True where a live zombie is drawn.
         Same placement as Craftax-Classic's renderer, so labels line up with the frame's 7 x 7-pixel tiles."""
         from craftax.craftax_classic.constants import OBS_DIM
