@@ -56,7 +56,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
   - [x] Survival cost in the planner: first full chain (1/50) and table 42%, but no clear gain; still
         killed by zombies at ~135–150 steps
   - [x] Danger critic (health lost in the next N steps): v2 latent sees danger only weakly (AUC 0.73)
-  - [ ] **Now: v4 spatial latent**, then critic + survival again on v4
+  - [ ] **Now: v4 spatial latent** (trained; sees zombies, adjacent AUC 0.967 with the threat head; reach
+        51% / 35%). Chain runs, plain and with threat sense: rerun 2026-11-04 (`experiments/colab_v4_chains.sh`)
   - [ ] Later, if long chains stall once the agent survives: H-JEPA-style levels with their own latents
         (arXiv 2610.06805)
   - [ ] Memory of trees, table, stone (moved up from phase 4)

@@ -499,3 +499,12 @@ The v4 encoder spreads a zombie over neighbouring tile tokens, so each tile must
 neighbours. Read this way, v4 sees adjacent zombies almost as well as the pixels do. In the planner,
 `--threat-weight λ` adds λ × (imagined zombie probability on the 8 tiles around the player), summed over each
 imagined path. Labels only train the head; behaviour still comes from planning.
+
+## v4 chain runs: lost to a runtime cut-off (2026-10-31)
+
+Two v4 chain runs (hier + prior, round 9 setup, 50 worlds each, default CEM, code before 097ec20) ran ~16 h
+on the A100 and were cut off when the Colab compute units ran out, before writing any results. A mid-run peek
+(py-spy, 25+ of 50 worlds) showed median episode length ~150–174 steps vs v2's 124, but no stage rates.
+Since 6a29c16 chain runs append each world to `<out>.worlds.jsonl` as it ends and `--resume` picks up from
+there. Rerun on 2026-11-04 with the faster planner (`--half`, 128 samples, 4 iterations) after a reach check,
+plus threat sense at weights 1 and 3: `experiments/colab_v4_chains.sh`.
