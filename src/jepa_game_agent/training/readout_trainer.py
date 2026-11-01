@@ -36,7 +36,7 @@ def danger_labels(vitals: NDArray[np.float32], ahead: int) -> NDArray[np.float32
     health = vitals[:, 0]
     out = np.zeros((len(health), 1), np.float32)
     for t in range(len(health) - 1):
-        out[t, 0] = max(0.0, float(health[t] - health[t + 1 : t + 1 + ahead].min()))
+        out[t, 0] = max(0.0, float(health[t]) - float(np.min(health[t + 1 : t + 1 + ahead])))
     return out
 
 
