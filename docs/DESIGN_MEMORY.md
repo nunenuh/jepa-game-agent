@@ -22,17 +22,36 @@ every step:
   4. plan          planner cost += λ × distance from the imagined position to (x*, y*)
 ```
 
-- **Where am I (path integration):** a move action either moves the player one tile or only turns it (blocked).
-  The agent checks which happened in its own latent: does today's token grid match yesterday's shifted by one
-  tile, or unshifted? No game state is read. Position starts at (0, 0) each world.
+- **Where am I (path integration + scan matching):** a move action either moves the player one tile or only
+  turns it (blocked). The agent checks which happened in its own latent by matching today's token grid against
+  the map at the candidate positions (stayed, moved one tile) and keeping the best match, as SLAM matches a
+  scan to its map rather than only to the last frame, so small errors don't pile up. No game state is read.
+  Position starts at (0, 0) each world.
 - **Remember:** the map keeps the latest token seen at each world tile (a dictionary, CPU, tiny: a 64 × 64
   world is at most 4096 tokens of 32 numbers).
 - **Recall:** the goal picture (e.g. "next to a tree") has a tile next to the player that matters most: the
   one least like ordinary ground (furthest from the average token). Recall returns the nearest remembered
   tile whose token is closest to it, if it is close enough (a threshold set on recorded games).
 - **Plan:** the planner already scores imagined action sequences. With a target out of view, each imagined
-  path gets a position (its move actions, assumed to succeed) and pays λ × the Manhattan distance left to the
-  target. Once the target is in view, this term turns off and the goal-picture cost does the rest.
+  path gets a position (its move actions, assumed to succeed) and pays λ × the distance left to the target.
+  First version: Manhattan distance. Next, if water or stone walls get in the way: shortest path over the map,
+  avoiding tiles where the agent's own moves were blocked. Once the target is in view, this term turns off
+  and the goal-picture cost does the rest.
+
+## Prior work this follows
+
+The standard split in embodied navigation: a map, a pose estimate, a long-range goal on the map, and a
+short-range planner to reach it.
+
+- **Neural Map** (Parisotto & Salakhutdinov, 2017): a 2D memory written at the agent's position; it assumed the
+  true position, we estimate it.
+- **Active Neural SLAM / goal-oriented semantic exploration** (Chaplot et al., 2020): top-down map + estimated
+  pose + long-term goal on the map + local planner. The same four parts as here.
+- **GLAM** ([arXiv 2609.14561](https://arxiv.org/abs/2609.14561)) and **ESWM** ([arXiv 2505.13696](https://arxiv.org/abs/2505.13696)):
+  latent world models with a spatial memory kept outside the model, as here (the JEPA stays as it is).
+- Alternatives kept for later: **SPTM** (Savinov et al., 2018), a graph of remembered views with no coordinates;
+  **Temporal-Distance JEPA** ([arXiv 2607.25337](https://arxiv.org/abs/2607.25337)), a learned "steps to reach"
+  cost that handles walls better than straight-line distance.
 
 ## Fairness
 
