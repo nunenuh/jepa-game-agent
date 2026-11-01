@@ -2,6 +2,7 @@
 # Phase 3, v4 crafting test on Colab (rerun after the 2026-10-31 runtime cut-off).
 #   bash experiments/colab_v4_chains.sh reach    # ~10 min: is the fast planner as good as the default (51% / 35%)?
 #   bash experiments/colab_v4_chains.sh chains   # 3 chain runs in the background: v4, v4 + threat sense x1 and x3
+#   bash experiments/colab_v4_chains.sh memory   # does the tile map work on v4? (docs/DESIGN_MEMORY.md)
 # Safe to re-run: finished steps are skipped and chain runs pick up from <out>.worlds.jsonl.
 set -euo pipefail
 D=${D:-/content/drive/MyDrive/jepa-game-agent}
@@ -33,8 +34,18 @@ chains)
     run chain_t1 "--threat $O/threat_v4.pt --threat-weight 1"
     run chain_t3 "--threat $O/threat_v4.pt --threat-weight 3"
     ;;
+memory)
+    for a in collect_wood make_wood_pickaxe; do  # trees; the table
+        for sim in 0.8 0.9 0.95; do
+            [ -f "$O/memory_${a}_$sim.json" ] || jga memory-check --checkpoint "$M" --data "$D/phase1/test.npz" \
+                --env Craftax-Classic-Pixels-v1 --episodes 50 --goal-data $S/ppo_00.npz --goal-split train \
+                --achievement $a --memory-sim $sim --out "$O/memory_${a}_$sim.json" >>"$O/memory.log" 2>&1
+            tail -n 1 "$O/memory.log"
+        done
+    done
+    ;;
 *)
-    echo "usage: $0 reach|chains" >&2
+    echo "usage: $0 reach|chains|memory" >&2
     exit 2
     ;;
 esac

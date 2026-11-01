@@ -10,6 +10,7 @@ import torch
 
 from jepa_game_agent.config import PlannerConfig
 from jepa_game_agent.envs.base import Frame
+from jepa_game_agent.memory.tilemap import TileMap, path_distance
 from jepa_game_agent.models.prior import ActionPrior
 from jepa_game_agent.models.readout import Readout
 from jepa_game_agent.models.threat import ThreatHead
@@ -40,6 +41,9 @@ class JepaAgent:
     LeCun's trainable critic, so plans avoid what comes before pain, not only pain itself.
     threat + threat_weight: add threat_weight * (probability of a zombie on threat_tiles, the tiles next to the
     player, summed over the imagined path), read off imagined tile tokens by the per-tile threat head.
+    memory: keep a map of the tile tokens seen (spatial models only, docs/DESIGN_MEMORY.md). When the goal
+    picture's key tile is out of view but remembered (cosine >= memory_sim), add memory * (tiles left to it after
+    each imagined step, summed over the path).
     """
 
     def __init__(
@@ -62,6 +66,8 @@ class JepaAgent:
         threat: ThreatHead | None = None,
         threat_weight: float = 0.0,
         threat_tiles: Sequence[int] = (),
+        memory: float = 0.0,
+        memory_sim: float = 0.9,
     ) -> None:
         if hud_rows < 0:
             raise ValueError("hud_rows must be >= 0")
@@ -100,6 +106,13 @@ class JepaAgent:
         self.weights = None if weights is None else weights.to(device)
         self.prior = None if prior is None else prior.eval().to(device)
         self.prior_mix = prior_mix
+        if memory < 0 or (memory > 0 and not model.cfg.grid):
+            raise ValueError("memory must be >= 0 and needs a spatial (--grid) world model")
+        self.memory, self.memory_sim = memory, memory_sim
+        self.memory_map = TileMap(model.cfg.token_dim, model.cfg.grid) if memory > 0 else None
+        self._last: int | None = None  # the action played last step (where-am-I needs it)
+        self._target: tuple[int, int] | None = None
+        self._pictures = torch.zeros(0)  # the goal pictures' latents (N, D), set by reset
 
     def _prior(self, now: torch.Tensor) -> torch.Tensor | None:
         return None if self.prior is None else self.prior.probs(now, self.prior_mix)
@@ -120,11 +133,13 @@ class JepaAgent:
                 raise ValueError(f"goal_as={self.goal_as!r} needs (2, H, W, C) before/after pairs")
             before, after = self._encode(list(pairs[:, 0])), self._encode(list(pairs[:, 1]))
             self._delta = (after - before).mean(0)
-            self._picture = (before if self.travel == "before" else after).mean(0)
+            self._pictures = before if self.travel == "before" else after
+            self._picture = self._pictures.mean(0)
             self.goal = self._delta if self.goal_as == "change" else self._picture  # change: set per step
             self._goal_frames = pairs[:, 1]
             return
-        self.goal = self._encode(goal_frames).mean(0)
+        self._pictures = self._encode(goal_frames)
+        self.goal = self._pictures.mean(0)
         self._goal_frames = np.stack(goal_frames)
 
     def _see(self, frame: Frame) -> torch.Tensor:
@@ -138,6 +153,10 @@ class JepaAgent:
             mixed[:, : -self.hud_rows] = frame[: -self.hud_rows]
             self.goal = self._encode(list(mixed)).mean(0)
         now = self._encode([frame])[0]
+        if self.memory_map is not None:
+            self.memory_map.observe(now, self._last)
+            key = self.memory_map.key(self._pictures)  # each goal picture's key tile, averaged
+            self._target = self.memory_map.recall(key, self.memory_sim)
         if self.readout_model is not None:
             with torch.no_grad():
                 self._sense_now = self.readout_model.encode(self._frames_to_tensor([frame]))[0]
@@ -155,7 +174,11 @@ class JepaAgent:
         a readout_model the path is re-imagined by it from its own latent) plus danger (critic's expected loss)."""
         survive = self.readout is not None and self.survival > 0
         threat, tw, tiles = self.threat, self.threat_weight, self.threat_tiles
-        if not survive and not (self.critic is not None and self.danger > 0) and not (threat is not None and tw > 0):
+        target, mw = self._target, self.memory
+        pos = (0, 0) if self.memory_map is None else self.memory_map.pos
+        recall = target is not None and mw > 0
+        danger = self.critic is not None and self.danger > 0
+        if not (survive or danger or (threat is not None and tw > 0) or recall):
             return None
         head, w, critic, dw = self.readout, self.survival, self.critic, self.danger
         sense, s_now = self.readout_model, self._sense_now
@@ -176,6 +199,8 @@ class JepaAgent:
                     total = total + dw * critic(path)[..., 0].clamp(min=0).sum(-1)
                 if threat is not None and tw > 0:
                     total = total + tw * torch.sigmoid(threat(path)[..., tiles]).sum((-1, -2))
+                if target is not None and mw > 0:
+                    total = total + mw * path_distance(seqs, pos, target).to(path.device)
             return total
 
         return cost
@@ -200,7 +225,10 @@ class JepaAgent:
         assert self.goal is not None
         change = self._change_plan(now)
         if change is not None:
-            return int(change[0])
-        return int(
-            plan_to_goal(self.model, now, self.goal, self.cfg, self.weights, self._prior(now), self._extra(now))[0]
-        )
+            return self._play(int(change[0]))
+        seq = plan_to_goal(self.model, now, self.goal, self.cfg, self.weights, self._prior(now), self._extra(now))
+        return self._play(int(seq[0]))
+
+    def _play(self, action: int) -> int:
+        self._last = action
+        return action

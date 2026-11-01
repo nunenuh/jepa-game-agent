@@ -508,3 +508,20 @@ on the A100 and were cut off when the Colab compute units ran out, before writin
 Since 6a29c16 chain runs append each world to `<out>.worlds.jsonl` as it ends and `--resume` picks up from
 there. Rerun on 2026-11-04 with the faster planner (`--half`, 128 samples, 4 iterations) after a reach check,
 plus threat sense at weights 1 and 3: `experiments/colab_v4_chains.sh`.
+
+## Memory: tile map, best-case check on the laptop (2026-11-02)
+
+`jga memory-check` replays recorded games and scores the agent's own tile map against the game's true
+position and blocks (read only to score). Here the "encoder" is the raw pixels of each 7×7 tile, the best any
+encoder could do; 12 random-play Craftax games (1159 steps), recall scored for the collect_wood goal (trees):
+
+| check | bar | pixel tiles |
+|---|---|---|
+| shift test (moved vs blocked) | ≥ 95% | 98% |
+| position error, median | ≤ 2 tiles | 0 |
+| recall points at a real tree | ≥ 80% | 100% (5 of 5 at cosine 0.95; 13 of 13 at 0.97) |
+
+Two bugs found on the way (see the design note): the player's own tile polluted the map, and averaging goal
+pictures blurred the tree. Recall fires rarely here because it stays quiet whenever a match is already in
+view. Next: the same check on v4 latents (`experiments/colab_v4_chains.sh memory`), then chain runs with
+`--memory`.

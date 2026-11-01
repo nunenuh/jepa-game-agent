@@ -290,7 +290,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                          prior_mix=args.prior_mix, goal_as=args.goal_as, reach=args.reach,
                          travel=args.travel, readout=readout, survival=args.survival, readout_model=sense,
                          critic=critic, danger=args.danger, threat=threat, threat_weight=args.threat_weight,
-                         threat_tiles=threat_tiles)  # fmt: skip
+                         threat_tiles=threat_tiles, memory=args.memory, memory_sim=args.memory_sim)  # fmt: skip
 
     top_cfg = None
     if args.top is not None:
@@ -309,7 +309,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                                      goal_as=args.goal_as, reach=args.reach, travel=args.travel,
                                      readout=readout, survival=args.survival, readout_model=sense,
                                      critic=critic, danger=args.danger, threat=threat, threat_weight=args.threat_weight,
-                         threat_tiles=threat_tiles)  # fmt: skip
+                         threat_tiles=threat_tiles, memory=args.memory, memory_sim=args.memory_sim)  # fmt: skip
 
     results: dict[str, dict[str, object]] = {}
     goal_fn = achievement_goal_frames if args.goal_as == "picture" else achievement_goal_pairs
@@ -356,6 +356,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"readout_model": None if args.readout_model is None else str(args.readout_model)}
     config |= {"critic": None if args.critic is None else str(args.critic), "danger": args.danger}
     config |= {"threat": None if args.threat is None else str(args.threat), "threat_weight": args.threat_weight}
+    config |= {"memory": args.memory, "memory_sim": args.memory_sim}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -458,6 +459,51 @@ def _train_readout(args: argparse.Namespace) -> None:
     r2 = {k: (None if var[j] == 0 else float(1 - ((pred[:, j] - true[:, j]) ** 2).mean() / var[j]))
           for j, k in enumerate(names)}  # fmt: skip
     print(json.dumps({"episodes": len(episodes), "held_out": int(held.sum()), "r2": r2, "last": history[-1]}))
+
+
+BLOCK_FOR = {"collect_wood": "TREE", "collect_stone": "STONE", "collect_coal": "COAL", "collect_iron": "IRON",
+             "collect_diamond": "DIAMOND", "collect_drink": "WATER", "make_wood_pickaxe": "CRAFTING_TABLE",
+             "make_stone_pickaxe": "CRAFTING_TABLE", "make_iron_pickaxe": "CRAFTING_TABLE"}  # fmt: skip
+
+
+def _memory_check(args: argparse.Namespace) -> None:
+    import numpy as np
+
+    from jepa_game_agent.evaluation.goals import achievement_goal_pairs
+    from jepa_game_agent.evaluation.memory_check import check_memory
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, _ = load_checkpoint(args.checkpoint, device)
+    if not model.cfg.grid:
+        raise ValueError("memory needs a spatial (--grid) world model")
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    episodes = episodes[: args.episodes]
+    env = make_env(args.env, seed=args.seed)
+    if not hasattr(env, "position") or not hasattr(env, "block_map"):
+        raise ValueError(f"{args.env} can't tell the true position and blocks needed to score the memory")
+
+    def encode(frames: np.ndarray) -> torch.Tensor:
+        with torch.no_grad():
+            x = torch.from_numpy(frames).to(device).permute(0, 3, 1, 2).float() / 255
+            return model.encode(x).cpu()
+
+    key_goal, want = None, None
+    if args.achievement is not None:
+        goal_eps = [e for path in args.goal_data for e in load_episodes(path)]
+        if args.goal_split != "all":
+            goal_eps = [e for e in goal_eps if split_of(e.seed) == args.goal_split]
+        pairs = achievement_goal_pairs(goal_eps, args.achievement, n=args.goal_frames, seed=args.seed)
+        if not pairs:
+            raise ValueError(f"no {args.achievement} in the goal data")
+        key_goal = encode(np.stack([p[0] for p in pairs]))  # the 'before' pictures, as --travel before
+        want = env.block_id(args.block or BLOCK_FOR[args.achievement])  # type: ignore[attr-defined]
+    res = check_memory(env, episodes, encode, model.cfg.token_dim, model.cfg.grid, key_goal, want, args.memory_sim)
+    res |= {"checkpoint": str(args.checkpoint), "achievement": args.achievement, "memory_sim": args.memory_sim}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(res, indent=1))
+    print(json.dumps(res))
 
 
 def _render(args: argparse.Namespace) -> None:
@@ -713,6 +759,21 @@ def build_parser() -> argparse.ArgumentParser:
     th.add_argument("--seed", type=int, default=0)
     th.add_argument("--checkpoint", type=Path, required=True)
     th.set_defaults(func=_train_threat)
+    mc = sub.add_parser("memory-check", help="does the tile map work? score it on replayed games")
+    mc.add_argument("--checkpoint", type=Path, required=True, help="spatial (--grid) world model")
+    mc.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games to replay")
+    mc.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    mc.add_argument("--env", default="Craftax-Classic-Pixels-v1")
+    mc.add_argument("--episodes", type=int, default=50)
+    mc.add_argument("--seed", type=int, default=0)
+    mc.add_argument("--goal-data", type=Path, nargs="+", help="games to take the goal picture from, for recall")
+    mc.add_argument("--goal-split", choices=("all", "train", "val", "test"), default="all")
+    mc.add_argument("--goal-frames", type=int, default=64)
+    mc.add_argument("--achievement", help="score recall for this goal, e.g. collect_wood (looks for trees)")
+    mc.add_argument("--block", help="the block recall should find (default: from the achievement)")
+    mc.add_argument("--memory-sim", type=float, default=0.9)
+    mc.add_argument("--out", type=Path, required=True)
+    mc.set_defaults(func=_memory_check)
     rn = sub.add_parser("render", help="watch a recorded or played episode as a GIF (threat view in red)")
     rn.add_argument("--data", type=Path, required=True, help="episodes file, e.g. <out>.play.npz")
     rn.add_argument("--episode", type=int, default=0)
@@ -785,6 +846,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pa.add_argument("--resume", action="store_true", help="--chain: skip worlds already in <out>.worlds.jsonl")
     pa.add_argument("--record", type=int, default=0, help="save the first N worlds played to <out>.play.npz")
+    pa.add_argument("--memory", type=float, default=0.0, help="weight of the walk-to-remembered-tile cost")
+    pa.add_argument("--memory-sim", type=float, default=0.9, help="cosine a remembered tile needs to count")
     pa.add_argument("--out", type=Path, required=True)
     pa.set_defaults(func=_plan_achievement)
     return p

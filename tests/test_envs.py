@@ -79,3 +79,20 @@ def test_craftax_zombie_tiles_match_where_the_zombie_is_drawn() -> None:
     assert tiles.shape == (7, 9) and tiles.sum() == 1 and tiles[3, 5]
     diff = np.abs(frame.astype(int) - empty.astype(int)).sum(-1)
     assert diff[21:28, 35:42].sum() > 0 and diff[:49].sum() == diff[21:28, 35:42].sum()
+
+
+@pytest.mark.craftax
+def test_craftax_position_and_blocks_for_scoring_memory() -> None:
+    """position() and block_map() (scoring only): moving right adds 1 to the column unless blocked, and the
+    block map knows which tiles are trees."""
+    pytest.importorskip("craftax")
+    env = make_env("Craftax-Classic-Pixels-v1")
+    env.reset(seed=0)
+    start = env.position()  # type: ignore[attr-defined]
+    blocks = env.block_map()  # type: ignore[attr-defined]
+    env.step(2)  # RIGHT
+    r, c = env.position()  # type: ignore[attr-defined]
+    ahead = blocks[start[0], start[1] + 1]
+    walkable = {env.block_id(n) for n in ("GRASS", "SAND", "PATH")}  # type: ignore[attr-defined]
+    assert (r, c) == ((start[0], start[1] + 1) if ahead in walkable else start)
+    assert blocks.shape == (64, 64) and (blocks == env.block_id("TREE")).any()  # type: ignore[attr-defined]

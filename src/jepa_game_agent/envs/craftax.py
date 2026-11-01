@@ -98,6 +98,21 @@ class CraftaxEnv:
                 grid[r, c] = True
         return grid
 
+    def position(self) -> tuple[int, int]:
+        """The player's (row, col) in the world: for scoring the agent's own map, never for playing."""
+        r, c = (int(x) for x in np.asarray(self._state.player_position))
+        return r, c
+
+    def block_map(self) -> np.ndarray[Any, Any]:
+        """The world's block ids (rows x cols), for scoring only; names via block_id."""
+        return np.asarray(self._state.map)
+
+    @staticmethod
+    def block_id(name: str) -> int:
+        from craftax.craftax_classic.constants import BlockType
+
+        return int(BlockType[name].value)
+
     @property
     def state(self) -> Any:
         """The full Craftax state (map, player, inventory, ...), e.g. to stage impossible events."""

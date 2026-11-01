@@ -1,6 +1,6 @@
 # Design note: memory, a map of what the agent has seen
 
-Status: **draft 2026-11-02, for approval.** Results so far: [experiments/results](../experiments/results/README.md).
+Status: **approved 2026-11-02**; built (`memory/tilemap.py`, `--memory`, `jga memory-check`), v4 check pending. Results so far: [experiments/results](../experiments/results/README.md).
 
 ## The problem
 
@@ -87,6 +87,14 @@ Then, does it play better? Same chain as the Nov 4 runs, 50 worlds:
 - **Darkness at night** changes tokens: recall compares against tokens seen in daylight too; measure first.
 - **Distance cost fights the threat cost** (walk past a zombie to reach the tree): that is the planner's job;
   λ is swept (0.5, 1, 2).
+
+## What building it taught (laptop, real Craftax, raw pixel tiles as tokens = best case)
+
+- The player's own tile shows the player sprite, not the ground: written to the map, it left a trail of
+  "player" tiles that recall mistook for trees (precision 5%). The map now skips it: precision 100%.
+- Goal pictures face the tree from different sides; averaging them first blurs the tree. The key tile is now
+  picked per picture, then averaged.
+- Position from the shift test alone: moved vs blocked right 98% of the time, median position error 0 tiles.
 
 ## Steps
 

@@ -47,10 +47,12 @@ class HierarchicalAgent(JepaAgent):
         threat: ThreatHead | None = None,
         threat_weight: float = 0.0,
         threat_tiles: Sequence[int] = (),
+        memory: float = 0.0,
+        memory_sim: float = 0.9,
     ) -> None:
         super().__init__(
             model, bottom_cfg, device, hud_rows, weights, prior, prior_mix, goal_as, reach, travel, readout,
-            survival, readout_model, critic, danger, threat, threat_weight, threat_tiles,
+            survival, readout_model, critic, danger, threat, threat_weight, threat_tiles, memory, memory_sim,
         )  # fmt: skip
         if bank is not None and (bank.dim() != 2 or bank.size(1) != top.cfg.latent_dim):
             raise ValueError(f"bank must have shape (M, {top.cfg.latent_dim})")
@@ -69,7 +71,7 @@ class HierarchicalAgent(JepaAgent):
         change = self._change_plan(now)  # goal_as='both': a doable change beats walking on
         if change is not None:
             self._t = 0  # replan the route from wherever the change leaves us
-            return int(change[0])
+            return self._play(int(change[0]))
         if self._t % self.top.cfg.stride == 0:
             _, sub = plan_chunks_to_goal(self.top, now, self.goal, self.top_cfg, self.weights)
             if self.bank is not None:
@@ -80,6 +82,5 @@ class HierarchicalAgent(JepaAgent):
             self.top_plans += 1
         self._t += 1
         assert self.subgoal is not None
-        return int(
-            plan_to_goal(self.model, now, self.subgoal, self.cfg, self.weights, self._prior(now), self._extra(now))[0]
-        )
+        seq = plan_to_goal(self.model, now, self.subgoal, self.cfg, self.weights, self._prior(now), self._extra(now))
+        return self._play(int(seq[0]))

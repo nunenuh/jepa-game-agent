@@ -60,7 +60,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
         51% / 35%). Chain runs, plain and with threat sense: rerun 2026-11-04 (`experiments/colab_v4_chains.sh`)
   - [ ] Later, if long chains stall once the agent survives: H-JEPA-style levels with their own latents
         (arXiv 2610.06805)
-  - [ ] Memory of trees, table, stone (moved up from phase 4)
+  - [ ] Memory of trees, table, stone (moved up from phase 4): tile map built (design note
+        [docs/DESIGN_MEMORY.md](docs/DESIGN_MEMORY.md), approved 2026-11-02); v4 check and chain runs pending
   - [ ] Recipe learned from the recorded games instead of given
 - [ ] Optional: LLM subgoals
 

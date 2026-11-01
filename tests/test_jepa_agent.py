@@ -269,3 +269,21 @@ def test_threat_cost_avoids_imagined_futures_with_danger_next_to_the_player() ->
     assert agent.act(env.set_agent(0, 0)) == 4
     with pytest.raises(ValueError):
         JepaAgent(exact_model(), cfg, threat_weight=1.0)  # needs a threat head and tiles
+
+
+def test_memory_cost_heads_for_a_remembered_target_out_of_view() -> None:
+    """With a target recalled 6 tiles to the left, imagined paths pay for every tile still between them and it:
+    the agent walks left. Memory needs a spatial (tile token) world model."""
+    spatial = ModelConfig(num_actions=17, grid=9, token_dim=4, latent_dim=9 * 9 * 4, context=4,
+                          predictor_layers=1, predictor_heads=2, width=16)  # fmt: skip
+    torch.manual_seed(0)
+    cfg = PlannerConfig(horizon=4, samples=256, elites=16, iterations=4)
+    agent = JepaAgent(WorldModel(spatial), cfg, memory=100.0)
+    frame = np.random.default_rng(0).integers(0, 255, (63, 63, 3), dtype=np.uint8)
+    agent.reset([frame])
+    assert agent.memory_map is not None
+    agent.memory_map.recall = lambda token, min_sim: (0, -6)  # type: ignore[method-assign]
+    assert agent.act(frame) == 1  # LEFT
+    assert len(agent.memory_map) == 62  # the 7 x 9 view is on the map, except the tile under the player
+    with pytest.raises(ValueError):
+        JepaAgent(exact_model(), cfg, memory=1.0)  # one-vector latent: no tiles to remember
