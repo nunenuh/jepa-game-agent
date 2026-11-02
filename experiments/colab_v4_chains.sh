@@ -5,6 +5,7 @@
 #                                                # unlock flag bug (experiments/results), so v2 is the baseline again
 #   bash experiments/colab_v4_chains.sh threat   # v4 + threat sense x1 and x3, background (after chains: costs units)
 #   bash experiments/colab_v4_chains.sh memory   # does the tile map work on v4? (docs/DESIGN_MEMORY.md)
+#   bash experiments/colab_v4_chains.sh progress # does v4 read item counts? then the chain on its own sense (DESIGN_RECIPE)
 # Safe to re-run: finished steps are skipped and chain runs pick up from <out>.worlds.jsonl.
 set -euo pipefail
 D=${D:-/content/drive/MyDrive/jepa-game-agent}
@@ -20,7 +21,7 @@ reach)
         --env Craftax-Classic-Pixels-v1 --k 5 10 --tasks 100 $FAST --out "$O/reach_fast.json" >"$O/reach_fast.log" 2>&1
     tail -n 1 "$O/reach_fast.log"
     ;;
-chains | threat)
+chains | threat | own)
     common="--chain --resume --goal-data $S/ppo_00.npz $S/ppo_01.npz $S/ppo_02.npz --goal-split train
        --achievement collect_wood:2 place_table collect_wood:1 make_wood_pickaxe collect_stone
        --resets 50 --budget 400 --env Craftax-Classic-Pixels-v1 --goal-as both --travel before --reach 0.5
@@ -36,10 +37,17 @@ chains | threat)
     if [ "$1" = chains ]; then
         run chain_v4 "$V4"
         run chain_v2 "$V2"
+    elif [ "$1" = own ]; then  # after `progress`: same as chain_v4, but the agent decides "stage done" itself
+        run chain_own "$V4 --progress $O/progress_v4.pt"
     else
         run chain_t1 "$V4 --threat $O/threat_v4.pt --threat-weight 1"
         run chain_t3 "$V4 --threat $O/threat_v4.pt --threat-weight 3"
     fi
+    ;;
+progress)
+    jga train-progress --data $S/ppo_00.npz $S/ppo_01.npz $S/ppo_02.npz --split train --bottom "$M" \
+        --env Craftax-Classic-Pixels-v1 --checkpoint "$O/progress_v4.pt" >>"$O/progress.log" 2>&1
+    tail -n 1 "$O/progress.log"
     ;;
 memory)
     for a in collect_wood make_wood_pickaxe; do  # trees; the table
@@ -52,7 +60,7 @@ memory)
     done
     ;;
 *)
-    echo "usage: $0 reach|chains|threat|memory" >&2
+    echo "usage: $0 reach|chains|threat|own|progress|memory" >&2
     exit 2
     ;;
 esac

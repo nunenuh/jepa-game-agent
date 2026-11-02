@@ -169,3 +169,30 @@ def test_the_chain_moves_on_the_moment_a_stage_is_done_in_the_real_game() -> Non
                          lambda t: agent, chain, counts=lambda e: e.inventory())  # type: ignore[attr-defined,arg-type,return-value]  # fmt: skip
     assert res["successes"] == [True] and res["ended"] == ["success"]
     assert agent.stages_given == [0, 1, 2]
+
+
+@pytest.mark.craftax
+def test_own_sense_catches_a_real_table_with_action_plus_wood_drop() -> None:
+    pytest.importorskip("craftax")
+    from jepa_game_agent.evaluation.runner import ChainStage
+    from jepa_game_agent.evaluation.stages import StageTracker
+
+    env = make_env("Craftax-Classic-Pixels-v1")
+    frame = env.reset(seed=0)
+    st = env.state  # type: ignore[attr-defined]
+    env.set_state(st.replace(inventory=st.inventory.replace(wood=9)))  # type: ignore[attr-defined]
+    place = env.action_id("PLACE_TABLE")  # type: ignore[attr-defined]
+    pic = [frame]
+    t = StageTracker([ChainStage("place_table", pic)], lambda f: env.inventory(), {"place_table": place})  # type: ignore[attr-defined]
+    t.start(frame)
+    stage, placed_at, seen_at = 0, None, None
+    for i in range(20):
+        action = place if i % 2 else 1 + (i // 2) % 4
+        res = env.step(action)
+        if placed_at is None and "place_table" in res.achievements:
+            placed_at = i
+        stage = t.update(res.frame, action)
+        if stage == 1:
+            seen_at = i
+            break
+    assert placed_at is not None and seen_at is not None and seen_at - placed_at <= 1

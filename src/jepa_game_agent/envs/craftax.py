@@ -112,6 +112,12 @@ class CraftaxEnv:
         return np.asarray(self._state.map)
 
     @staticmethod
+    def action_id(name: str) -> int:
+        from craftax.craftax_classic.constants import Action
+
+        return int(Action[name].value)
+
+    @staticmethod
     def block_id(name: str) -> int:
         from craftax.craftax_classic.constants import BlockType
 

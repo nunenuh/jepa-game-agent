@@ -44,8 +44,8 @@ PLAYING, every step, pixels only
   prerequisite of the table. SEA reports the same false edges. Two filters: keep only what the target's item chain
   reaches (items consumed or tools required), and test the rest against the recorded games with random actions mixed
   in (epsilon), where habits are weaker.
-- **Progress head:** the same kind of head as the vitals readout, trained on replayed labels: latent → item counts
-  and "table placed". The status bar is on screen, so this is reading, not cheating. v3's status-bar encoder read
+- **Progress head:** the same kind of head as the vitals readout, trained on replayed labels: latent → item counts. The status bar is on screen, so this is reading, not cheating. A placed table doesn't show once out of view, so
+  "placed" = the agent played the place action and an item count fell (changed 2026-11-02, before building). v3's status-bar encoder read
   the inventory at R² 0.997; v4's is **not measured yet**, and the check below comes first.
 - **Scoring stays with the game:** the runner still reads the true flags to score results. It just stops telling
   the agent.
@@ -80,7 +80,6 @@ First, does it work? (CPU only; no GPU units)
 | recipe from the recorded games vs the hand-written one | same order and counts |
 | false stages (`wake_up` and the like) after the filter | 0 |
 | progress head on v4, held-out: wood count right | ≥ 95% of frames |
-| progress head on v4, held-out: "table placed" AUC | ≥ 0.95 |
 | a stage called done too early or too late | ≤ 5% of unlocks, within 2 steps |
 
 Then, does it still play? Same chain as the given-recipe run, same 50 worlds, so the results can be compared world
@@ -108,6 +107,8 @@ Matching the given recipe is the win here: the same play, with nothing handed ov
 
 - Stricter than first drafted: a true prerequisite never fails, so one game without it disproves it ("nearly always"
   would keep habits).
+- "Table placed" can't be read off the screen once the table is out of view, so the head reads counts only, and the
+  tracker combines them with the agent's own action. It reads only the status bar's tokens on a spatial latent.
 - Run on real games, it exposed the unlock flag bug: Craftax's flags only fire when the game ends (see the results).
 
 ## Steps

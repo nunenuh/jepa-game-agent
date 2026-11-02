@@ -349,8 +349,23 @@ def _plan_achievement(args: argparse.Namespace) -> None:
                 save_episodes(play, env.episodes())
             _print_progress(done, total, world)
 
+        own = None
+        if args.progress is not None:
+            from jepa_game_agent.evaluation.stages import StageTracker
+            from jepa_game_agent.training.progress_trainer import load_progress
+
+            head, _ = load_progress(args.progress, device)
+            places = {st.name: env.action_id(st.name.upper()) for st in chain if st.name.startswith("place_")}  # type: ignore[attr-defined]
+
+            def read(frame: object) -> dict[str, float]:
+                with torch.no_grad():
+                    x = torch.from_numpy(frame).to(device).permute(2, 0, 1).float() / 255
+                    return head.read(model.encode(x[None])[0])
+
+            own = lambda t: StageTracker(chain, read, places, args.progress_hold)  # noqa: E731
+
         res = evaluate_chain(lambda: env, tasks, lambda t: make_agent(), chain, counts=counts, probe=probe,
-                             progress=keep, resume=resume)  # fmt: skip
+                             progress=keep, resume=resume, own_stage=own)  # fmt: skip
     for ach in [] if args.chain else args.achievement:
         tasks = [AchievementTask(ach, seed=args.seed + i, budget=args.budget) for i in range(args.resets)]
         results[ach] = {name: evaluate_achievement(lambda: env, tasks, lambda t: make_agent(), goal_frames=goals[ach])}
@@ -365,6 +380,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"threat": None if args.threat is None else str(args.threat), "threat_weight": args.threat_weight}
     config |= {"memory": args.memory, "memory_sim": args.memory_sim}
     config |= {"recipe": None if args.recipe is None else str(args.recipe)}
+    config |= {"progress": None if args.progress is None else str(args.progress), "progress_hold": args.progress_hold}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -512,6 +528,47 @@ def _memory_check(args: argparse.Namespace) -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=1))
     print(json.dumps(res))
+
+
+def _train_progress(args: argparse.Namespace) -> None:
+    import numpy as np
+
+    from jepa_game_agent.models.progress import ProgressHead
+    from jepa_game_agent.training.progress_trainer import replay_inventory, save_progress, train_progress
+    from jepa_game_agent.training.top_trainer import encode_episodes
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    bottom, _ = load_checkpoint(args.bottom, device)
+    episodes = [e for path in args.data for e in load_episodes(path)]
+    if args.split != "all":
+        episodes = [e for e in episodes if split_of(e.seed) == args.split]
+    rng = np.random.default_rng(args.seed)
+    episodes = [episodes[i] for i in sorted(rng.permutation(len(episodes))[: args.episodes])]
+    env = make_env(args.env, seed=args.seed)
+    if not hasattr(env, "inventory"):
+        raise ValueError(f"{args.env} has no inventory to read labels from")
+    items = tuple(sorted(env.inventory()))
+    replays = [replay_inventory(env, e, items) for e in episodes]  # frames and labels from the same replayed game
+    played = [Episode(f, np.zeros(len(f) - 1, np.int64), np.zeros(len(f) - 1, np.float32)) for f, _ in replays]
+    latents = encode_episodes(bottom, played, device)
+    counts = [c for _, c in replays]
+    held = np.arange(len(episodes)) % 5 == 0  # 1 in 5 episodes held out
+    fit = [i for i in range(len(episodes)) if not held[i]]
+    head = ProgressHead(bottom.cfg.latent_dim, items, grid=bottom.cfg.grid, token_dim=bottom.cfg.token_dim)
+    history = train_progress(head, [latents[i] for i in fit], [counts[i] for i in fit], args.steps, args.batch_size,
+                             seed=args.seed, device=device)  # fmt: skip
+    save_progress(args.checkpoint, head, history)
+    test = [i for i in range(len(episodes)) if held[i]] or fit
+    with torch.no_grad():
+        z = torch.from_numpy(np.concatenate([latents[i] for i in test])).float().to(device)
+        guess = head(z).cpu().numpy().round()
+    y = np.concatenate([counts[i] for i in test])
+    right = guess == y
+    summary = {"episodes": len(episodes), "held_out": int(held.sum()), "last": history[-1],
+               "right": {it: float(right[:, j].mean()) for j, it in enumerate(items)},
+               "right_when_held": {it: float(right[y[:, j] > 0, j].mean()) if (y[:, j] > 0).any() else None
+                                   for j, it in enumerate(items)}}  # fmt: skip
+    print(json.dumps(summary))
 
 
 def _learn_recipe(args: argparse.Namespace) -> None:
@@ -800,6 +857,17 @@ def build_parser() -> argparse.ArgumentParser:
     mc.add_argument("--memory-sim", type=float, default=0.9)
     mc.add_argument("--out", type=Path, required=True)
     mc.set_defaults(func=_memory_check)
+    pr = sub.add_parser("train-progress", help="sense of progress: item counts read off the status bar in a latent")
+    pr.add_argument("--data", type=Path, nargs="+", required=True)
+    pr.add_argument("--split", choices=("all", "train", "val", "test"), default="all")
+    pr.add_argument("--bottom", type=Path, required=True, help="world model checkpoint (frozen)")
+    pr.add_argument("--env", default="Craftax-Classic-Pixels-v1", help="env to replay the episodes in for labels")
+    pr.add_argument("--episodes", type=int, default=300, help="episodes replayed for labels (1 in 5 held out)")
+    pr.add_argument("--steps", type=int, default=2_000)
+    pr.add_argument("--batch-size", type=int, default=512)
+    pr.add_argument("--seed", type=int, default=0)
+    pr.add_argument("--checkpoint", type=Path, required=True)
+    pr.set_defaults(func=_train_progress)
     lr = sub.add_parser("learn-recipe", help="learn the stages toward a target from recorded games (labels, offline)")
     lr.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games")
     lr.add_argument("--explore-data", type=Path, nargs="+", required=True,
@@ -843,6 +911,8 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--goal-frames", type=int, default=64, help="goal frames averaged into one goal latent")
     pa.add_argument("--env", default="gridworld")
     pa.add_argument("--achievement", nargs="+", help="the stages, in order, or use --recipe")
+    pa.add_argument("--progress", type=Path, help="--chain: the agent decides 'stage done' itself with this head")
+    pa.add_argument("--progress-hold", type=int, default=2, help="steps a reading must hold to count")
     pa.add_argument("--recipe", type=Path, help="stages from jga learn-recipe, instead of --achievement")
     pa.add_argument("--resets", type=int, default=50, help="fresh worlds per achievement")
     pa.add_argument("--budget", type=int, default=200)

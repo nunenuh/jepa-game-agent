@@ -128,13 +128,16 @@ def evaluate_chain(
     probe: Callable[[GameEnv], Mapping[str, Any]] | None = None,
     progress: Callable[[int, int, dict[str, Any]], None] | None = None,
     resume: Sequence[Mapping[str, Any]] = (),
+    own_stage: Callable[[AchievementTask], Any] | None = None,
 ) -> dict[str, Any]:
     """Pursue the chain's stages in order, each given as its goal frames; the agent is handed the first stage
     not yet done (one already done when reached is skipped; done stays done). Success = every stage done
     within the budget. counts(env) -> inventory, needed for stages that count items. probe(env) -> what to
     record about the world when each episode ends (e.g. vitals, to see what killed the player).
     progress(done, total, world): called after each world with its full record (long runs show how far they
-    got and can save it). resume: records of the first worlds from an earlier, cut-off run; those are skipped."""
+    got and can save it). resume: records of the first worlds from an earlier, cut-off run; those are skipped.
+    own_stage(task) -> a StageTracker: the agent then moves on by its own sense, pixels only; the game's truth only
+    scores, and "stage_timing" gives the step each stage was done, by the game and by the agent."""
     stages = [c if isinstance(c, ChainStage) else ChainStage(*c) for c in chain]
     if not stages:
         raise ValueError("empty chain")
@@ -151,31 +154,50 @@ def evaluate_chain(
         got: list[str] = []
         stage = 0
         agent.reset(list(stages[0].frames))
+        tracker = None if own_stage is None else own_stage(task)
+        if tracker is not None:
+            tracker.start(frame)
+        true_steps: list[int] = []
+        own_steps: list[int] = []
         hit, step, how = None, 0, "budget"
         for step in range(1, task.budget + 1):
-            result = env.step(agent.act(frame))
+            action = agent.act(frame)
+            result = env.step(action)
             frame = result.frame
             got += [a for a in result.achievements if a not in got]
             before = stage
             while stage < len(stages) and _stage_done(stages[stage], got, env, counts):
                 stage += 1
+                true_steps.append(step)
             if stage == len(stages):
                 hit, how = step, "success"
                 break
-            if stage != before:
+            if tracker is not None:
+                sensed = tracker.update(frame, action)
+                if sensed > len(own_steps):
+                    own_steps.append(step)
+                    if sensed < len(stages):
+                        agent.reset(list(stages[sensed].frames))
+            elif stage != before:
                 agent.reset(list(stages[stage].frames))
             if result.done:  # Craftax: the player died
                 how = "done"
                 break
-        world = {"success": hit is not None, "steps": hit, "reached": labels[:stage], "unlocked": got,
+        world: dict[str, Any] = {"success": hit is not None, "steps": hit, "reached": labels[:stage], "unlocked": got,
                  "length": step, "ended": how, "end_state": None if probe is None else dict(probe(env))}  # fmt: skip
+        if tracker is not None:
+            world |= {"true_steps": true_steps, "own_steps": own_steps}
         worlds.append(world)
         if progress is not None:
             progress(len(worlds), len(tasks), world)
     n = len(tasks)
     successes = [w["success"] for w in worlds]
     reached = [w["reached"] for w in worlds]
+    timing = {} if own_stage is None else {
+        "stage_timing": [{"true": w["true_steps"], "own": w["own_steps"]} for w in worlds]
+    }  # fmt: skip
     return {
+        **timing,
         "family": "chain",
         "chain": labels,
         "tasks": n,

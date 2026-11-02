@@ -62,7 +62,7 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
   - [ ] Later, if long chains stall once the agent survives: H-JEPA-style levels with their own latents
         (arXiv 2610.06805)
   - [ ] Learned recipe and own stage detection ([docs/DESIGN_RECIPE.md](docs/DESIGN_RECIPE.md), approved
-        2026-11-02): `jga learn-recipe` built; progress head next
+        2026-11-02): `jga learn-recipe`, `jga train-progress` and `--progress` built; checks on v4 pending
   - [ ] Memory of trees, table, stone (moved up from phase 4): tile map built (design note
         [docs/DESIGN_MEMORY.md](docs/DESIGN_MEMORY.md), approved 2026-11-02); v4 check and chain runs pending
   - [ ] Recipe learned from the recorded games instead of given
