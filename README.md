@@ -60,7 +60,7 @@ goal pictures (wood ×2 → table → pickaxe ...) ──┘        + λ × imag
 |---|---|---|
 | sees an adjacent zombie (AUC) | 0.65 | **0.967** |
 | reach a goal picture, K = 5 / 10 steps | 32% / 25% | **51% / 35%** |
-| chain: place a table (round 9 setup) | 38% | rerun 2026-11-04 |
+| chain: place a table (round 9 setup) | 38%, undercounted ([bug](experiments/results/README.md#the-unlock-flag-bug-found-2026-11-02)) | rerun 2026-11-04 |
 | episode length, median | 124 steps | ~150–174 (partial run) |
 
 Zombies cause nearly every death, so v4 was built to see them. Details, every run and the failures:

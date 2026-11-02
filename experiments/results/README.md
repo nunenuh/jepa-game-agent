@@ -1,5 +1,10 @@
 # Results
 
+> **Correction (2026-11-02):** every `plan-achievement` number before the fix below is wrong for stages decided by
+> an unlock flag: phase 3 rounds 1–9 and both survival rounds. See
+> [the unlock flag bug](#the-unlock-flag-bug-found-2026-11-02). Reach, surprise, probes, threat and baselines are
+> not affected.
+
 ## `phase1_baselines.json`: baselines on the PPO test split
 
 Run on Colab (2026-10-28), code at 8c166eb (the `commit` field reads `unknown`
@@ -525,3 +530,41 @@ Two bugs found on the way (see the design note): the player's own tile polluted 
 pictures blurred the tree. Recall fires rarely here because it stays quiet whenever a match is already in
 view. Next: the same check on v4 latents (`experiments/colab_v4_chains.sh memory`), then chain runs with
 `--memory`.
+
+## The unlock flag bug (found 2026-11-02)
+
+Craftax sets its `Achievements/` flags only on the step the game ends. `CraftaxEnv.step` read those flags as if they
+were live, so during play an unlock wasn't seen until the player died, and never if the game outlived the budget.
+Found when the recipe learner, run on real games, said a pickaxe "needs" a pickaxe. Measured on 6 random games: the
+table went down at step 27–176, and the flag came 15–151 steps later, or never.
+
+| what | effect |
+|---|---|
+| chain, plain stages (`place_table`, `make_wood_pickaxe`, ...) | the agent kept chasing a stage it had finished, until it died; it was never asked for the next one |
+| chain, counted stages (`collect_wood:2`) | read the live inventory, so wood × 2 advanced correctly |
+| stages after the table (wood × 1 10%, pickaxe 0–2%, the "first full chain" 1/50) | not measurements of the agent trying: they were read off the world at the moment of death |
+| table and single-achievement rates, steps to success | undercounted: worlds still alive at the budget scored 0, and "steps" meant the step of death |
+| baselines (random, PPO) | correct: they read the state directly, so random 14% was compared to an undercounted agent |
+
+**Not affected:** reach, surprise, action effects, probes, readouts, threat head, vitals at death, episode lengths and
+the recorded games (the batch collector reads the state, so goal pictures are right).
+
+**The old conclusion "survival, not planning, caps the chain" needs retesting:** the zombie deaths are real, but the
+stall after the table was at least partly this bug. Fixed by reading unlocks from the game state each step
+(`test_craftax_reports_an_unlock_on_the_step_it_happens`). The numbers above stay as recorded, with this warning.
+Next: rerun the chain with v2 as well as v4, since v2's old numbers can no longer be the baseline.
+
+## Learned recipe, first real check (2026-11-02)
+
+`jga learn-recipe` on 300 random-play Craftax games, half as recorded and half as the exploring set (laptop, 2 cores,
+about a minute):
+
+| | learned | game code |
+|---|---|---|
+| stages to the table | `collect_wood:2`, `place_table` | same |
+| table needs / costs | 2 wood / 2 wood | same |
+| pickaxe needs / costs | 1 wood / 1 wood | same |
+| table before pickaxe | reported as untestable (only 3 games reached a pickaxe) | required |
+
+So the recipe to the pickaxe comes out short for now, and says why. These games are random play, not the PPO shards;
+the real check (order and habits, down to stone) needs the shards plus games with random actions mixed in.

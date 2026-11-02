@@ -1,6 +1,6 @@
 # Design note: a learned recipe, and knowing for itself when a stage is done
 
-Status: **draft 2026-11-02, for approval.** Results so far: [experiments/results](../experiments/results/README.md).
+Status: **approved 2026-11-02** (as drafted; steps below in progress). Results so far: [experiments/results](../experiments/results/README.md).
 
 ## The problem
 
@@ -103,6 +103,12 @@ Matching the given recipe is the win here: the same play, with nothing handed ov
 - **The status bar can blur in v4:** health read poorly at first (R² 0.52 with this head, 0.74 with a random forest).
   If wood counts do too, read them with neighbouring tokens, as the threat head does, or use v3 as a second model
   through `--readout-model`.
+
+## What building it taught
+
+- Stricter than first drafted: a true prerequisite never fails, so one game without it disproves it ("nearly always"
+  would keep habits).
+- Run on real games, it exposed the unlock flag bug: Craftax's flags only fire when the game ends (see the results).
 
 ## Steps
 

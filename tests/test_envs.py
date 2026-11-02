@@ -96,3 +96,27 @@ def test_craftax_position_and_blocks_for_scoring_memory() -> None:
     walkable = {env.block_id(n) for n in ("GRASS", "SAND", "PATH")}  # type: ignore[attr-defined]
     assert (r, c) == ((start[0], start[1] + 1) if ahead in walkable else start)
     assert blocks.shape == (64, 64) and (blocks == env.block_id("TREE")).any()  # type: ignore[attr-defined]
+
+
+@pytest.mark.craftax
+def test_craftax_reports_an_unlock_on_the_step_it_happens() -> None:
+    """Craftax's own Achievements/ flags are only set on the step the game ends; ours must not wait for that."""
+    pytest.importorskip("craftax")
+    env = make_env("Craftax-Classic-Pixels-v1")
+    env.reset(seed=0)
+    st = env.state  # type: ignore[attr-defined]
+    env.set_state(st.replace(inventory=st.inventory.replace(wood=9)))  # type: ignore[attr-defined]
+    for turn in (1, 2, 3, 4):  # face each way until the table fits
+        env.step(turn)
+        res = env.step(8)  # PLACE_TABLE
+        if env.inventory()["wood"] < 9:  # type: ignore[attr-defined]
+            break
+    assert env.inventory()["wood"] < 9  # type: ignore[attr-defined]
+    assert "place_table" in res.achievements and not res.done
+    assert "place_table" in env.step(0).achievements  # stays reported, like the game's own list
+    st = env.state  # type: ignore[attr-defined]
+    env.set_state(st.replace(player_health=0))  # type: ignore[attr-defined]
+    last = env.step(0)
+    assert last.done and "place_table" in last.achievements  # the step the game ends, too
+    env.reset(seed=1)
+    assert "place_table" not in env.step(0).achievements  # a new world starts clean

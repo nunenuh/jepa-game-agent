@@ -25,6 +25,7 @@ from jepa_game_agent.data.episodes import (
 )
 from jepa_game_agent.envs import make_env
 from jepa_game_agent.models.world_model import WorldModel
+from jepa_game_agent.planning.recipe import GameTrace
 from jepa_game_agent.training.trainer import load_checkpoint, train
 
 
@@ -242,6 +243,12 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     from jepa_game_agent.evaluation.baselines import git_commit
     from jepa_game_agent.evaluation.goals import achievement_goal_frames, achievement_goal_pairs
 
+    if args.recipe is not None:
+        from jepa_game_agent.planning.recipe import load_recipe
+
+        args.achievement = list(load_recipe(args.recipe).stages)
+    if not args.achievement:
+        raise ValueError("give --achievement or --recipe")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, _ = load_checkpoint(args.checkpoint, device)
     cfg = PlannerConfig(horizon=args.horizon, samples=args.samples, elites=args.elites, iterations=args.iterations,
@@ -357,6 +364,7 @@ def _plan_achievement(args: argparse.Namespace) -> None:
     config |= {"critic": None if args.critic is None else str(args.critic), "danger": args.danger}
     config |= {"threat": None if args.threat is None else str(args.threat), "threat_weight": args.threat_weight}
     config |= {"memory": args.memory, "memory_sim": args.memory_sim}
+    config |= {"recipe": None if args.recipe is None else str(args.recipe)}
     config |= {"prior": None if args.prior is None else str(args.prior), "prior_mix": args.prior_mix}
     if top_cfg is not None:
         config |= {"top": str(args.top), "top_planner": dataclasses.asdict(top_cfg)}
@@ -504,6 +512,24 @@ def _memory_check(args: argparse.Namespace) -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(res, indent=1))
     print(json.dumps(res))
+
+
+def _learn_recipe(args: argparse.Namespace) -> None:
+    from jepa_game_agent.planning.recipe import learn_recipe, replay_trace, save_recipe
+
+    env = make_env(args.env, seed=args.seed)
+    if not hasattr(env, "inventory"):
+        raise ValueError(f"{args.env} has no inventory to read labels from")
+
+    def traces(paths: Sequence[Path]) -> list[GameTrace]:
+        episodes = [e for path in paths for e in load_episodes(path)]
+        if args.split != "all":
+            episodes = [e for e in episodes if split_of(e.seed) == args.split]
+        return [replay_trace(env, e) for e in episodes[: args.episodes]]
+
+    recipe = learn_recipe(traces(args.data), traces(args.explore_data), args.target, args.min_games)
+    save_recipe(args.out, recipe)
+    print(json.dumps(dataclasses.asdict(recipe)))
 
 
 def _render(args: argparse.Namespace) -> None:
@@ -774,6 +800,18 @@ def build_parser() -> argparse.ArgumentParser:
     mc.add_argument("--memory-sim", type=float, default=0.9)
     mc.add_argument("--out", type=Path, required=True)
     mc.set_defaults(func=_memory_check)
+    lr = sub.add_parser("learn-recipe", help="learn the stages toward a target from recorded games (labels, offline)")
+    lr.add_argument("--data", type=Path, nargs="+", required=True, help="recorded games")
+    lr.add_argument("--explore-data", type=Path, nargs="+", required=True,
+                    help="games with random actions mixed in, to tell habits from prerequisites")  # fmt: skip
+    lr.add_argument("--split", choices=("all", "train", "val", "test"), default="train")
+    lr.add_argument("--env", default="Craftax-Classic-Pixels-v1", help="env to replay the games in for labels")
+    lr.add_argument("--target", required=True, help="the last achievement, e.g. collect_stone")
+    lr.add_argument("--episodes", type=int, default=500, help="games replayed from each of --data, --explore-data")
+    lr.add_argument("--min-games", type=int, default=5, help="refuse numbers resting on fewer games")
+    lr.add_argument("--seed", type=int, default=0)
+    lr.add_argument("--out", type=Path, required=True)
+    lr.set_defaults(func=_learn_recipe)
     rn = sub.add_parser("render", help="watch a recorded or played episode as a GIF (threat view in red)")
     rn.add_argument("--data", type=Path, required=True, help="episodes file, e.g. <out>.play.npz")
     rn.add_argument("--episode", type=int, default=0)
@@ -804,7 +842,8 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--goal-split", choices=("all", "train", "val", "test"), default="all")
     pa.add_argument("--goal-frames", type=int, default=64, help="goal frames averaged into one goal latent")
     pa.add_argument("--env", default="gridworld")
-    pa.add_argument("--achievement", nargs="+", required=True)
+    pa.add_argument("--achievement", nargs="+", help="the stages, in order, or use --recipe")
+    pa.add_argument("--recipe", type=Path, help="stages from jga learn-recipe, instead of --achievement")
     pa.add_argument("--resets", type=int, default=50, help="fresh worlds per achievement")
     pa.add_argument("--budget", type=int, default=200)
     pa.add_argument("--seed", type=int, default=0)

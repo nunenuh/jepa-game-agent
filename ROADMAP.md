@@ -48,6 +48,7 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
 - [x] HUD encoder (inventory R² 0.997) and HUD-weighted cost: probes up, planning down
 - [x] Subgoal chain (`--chain`, fixed order): no crafting beyond 2% table
 - [x] Crafting fixes: action prior, balanced cost, change goals, picture + change combined (`--goal-as both`)
+- [ ] **Rerun the chain after the unlock flag bug (2026-11-02): all stage rates below are unreliable**, v2 and v4
 - [x] Correct recipe (given, from the game code: a table costs 2 wood): table 38% with `--travel before`
       (random 14%), first wood pickaxe
 - [ ] Agent modules still missing (see [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md)):
@@ -60,6 +61,8 @@ Interfaces and tests per part: [docs/SPECS.md](docs/SPECS.md).
         51% / 35%). Chain runs, plain and with threat sense: rerun 2026-11-04 (`experiments/colab_v4_chains.sh`)
   - [ ] Later, if long chains stall once the agent survives: H-JEPA-style levels with their own latents
         (arXiv 2610.06805)
+  - [ ] Learned recipe and own stage detection ([docs/DESIGN_RECIPE.md](docs/DESIGN_RECIPE.md), approved
+        2026-11-02): `jga learn-recipe` built; progress head next
   - [ ] Memory of trees, table, stone (moved up from phase 4): tile map built (design note
         [docs/DESIGN_MEMORY.md](docs/DESIGN_MEMORY.md), approved 2026-11-02); v4 check and chain runs pending
   - [ ] Recipe learned from the recorded games instead of given

@@ -6,7 +6,8 @@ Status: **approved 2026-11-02**; built (`memory/tilemap.py`, `--memory`, `jga me
 
 The planner only knows what is on screen now (7 × 9 tiles). Once a tree or the table leaves the view, the
 agent has no way back except stumbling on it. The chain shows it: after the table, the agent must go back for
-one more wood, and v2 managed that in only 10% of worlds (round 9). Later stages (stone, iron) are rarer
+one more wood. (The 10% from round 9 first quoted here was not a real measurement: see the unlock flag bug in the
+results. The chain must be rerun to learn how much memory is needed.) Later stages (stone, iron) are rarer
 and further away, so this gets worse.
 
 ## The idea in one picture

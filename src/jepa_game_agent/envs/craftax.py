@@ -28,12 +28,15 @@ class CraftaxEnv:
         import jax
         from craftax.craftax_env import make_craftax_env_from_name
 
+        from jepa_game_agent.data.craftax_batch import _achievement_names
+
         self._jax = jax
         self._env = make_craftax_env_from_name(name, auto_reset=False)
         self._params = self._env.default_params
         self.num_actions = int(self._env.action_space(self._params).n)
         self._key = jax.random.PRNGKey(seed)
         self._step = jax.jit(self._env.step)
+        self._names = _achievement_names(name)
         frame = self.reset(seed)
         self.frame_shape = (int(frame.shape[0]), int(frame.shape[1]), int(frame.shape[2]))
 
@@ -48,7 +51,8 @@ class CraftaxEnv:
         self._key, sub = self._jax.random.split(self._key)
         obs, self._state, reward, done, info = self._step(sub, self._state, action, self._params)
         flags = {k.split("/", 1)[1]: float(v) for k, v in info.items() if k.startswith("Achievements/")}
-        unlocked = tuple(k for k, v in flags.items() if v > 0)
+        # the game's Achievements/ flags are only set on the step it ends: read what is unlocked from the state
+        unlocked = tuple(n for n, on in zip(self._names, np.asarray(self._state.achievements), strict=True) if on)
         return StepResult(self._to_frame(obs), float(reward), bool(done), flags, unlocked)
 
     def state_key(self) -> tuple[int, ...]:
