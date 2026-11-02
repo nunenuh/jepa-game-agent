@@ -568,3 +568,21 @@ about a minute):
 
 So the recipe to the pickaxe comes out short for now, and says why. These games are random play, not the PPO shards;
 the real check (order and habits, down to stone) needs the shards plus games with random actions mixed in.
+
+## Audit of what the code assumes about the game (2026-11-02)
+
+After the unlock flag bug, checked on 150 random real games (and 40 or 8 of them where marked), CPU only:
+
+| assumption | result |
+|---|---|
+| goal pictures come from the real unlock step (action at that step) | right, 200 of 200 |
+| a replay matches its recording (40 games) | 3 identical; in the 8 inspected, same length, and frames differ by at most 1/255 on a few pixels |
+| Craftax action numbers and tile positions | right (tested on the game; shift test 98%) |
+| block and item names used by the code | right |
+| moves work while the player sleeps | **no**: 0 of 271 moved |
+
+Not checked: replays of the PPO shards collected on a GPU and replayed on a CPU, where the earlier replay drift was
+seen. Labels use the replayed frames, so that stays safe. Open: frames written to the memory map while asleep or at
+night may blur recall; the v4 memory check will show it. `test_the_chain_moves_on_the_moment_a_stage_is_done_in_the_real_game`
+now runs the real game through the chain runner in CI, and fails on the old code.
+

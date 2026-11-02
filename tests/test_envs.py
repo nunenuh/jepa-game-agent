@@ -120,3 +120,52 @@ def test_craftax_reports_an_unlock_on_the_step_it_happens() -> None:
     assert last.done and "place_table" in last.achievements  # the step the game ends, too
     env.reset(seed=1)
     assert "place_table" not in env.step(0).achievements  # a new world starts clean
+
+
+@pytest.mark.craftax
+def test_the_chain_moves_on_the_moment_a_stage_is_done_in_the_real_game() -> None:
+    """The real game through the real chain runner: the agent is given each stage right after finishing the last,
+    while still alive. With unlocks only seen at death, it stayed on place_table forever."""
+    pytest.importorskip("craftax")
+    from craftax.craftax_classic.constants import Action
+
+    from jepa_game_agent.evaluation import AchievementTask, evaluate_chain
+    from jepa_game_agent.evaluation.runner import ChainStage
+
+    env = make_env("Craftax-Classic-Pixels-v1")
+
+    class Rich:
+        """The real game, starting with wood to spend."""
+
+        def reset(self, seed: int) -> np.ndarray:
+            env.reset(seed)
+            st = env.state  # type: ignore[attr-defined]
+            return env.set_state(st.replace(inventory=st.inventory.replace(wood=9)))  # type: ignore[attr-defined]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(env, name)
+
+    class Crafter:
+        """Turns and places a table until one fits, then makes a pickaxe. Stages are told apart by their goal frame."""
+
+        def __init__(self) -> None:
+            self.stages_given: list[int] = []
+            self.t = 0
+
+        def reset(self, frames: list[np.ndarray]) -> None:
+            self.stages_given.append(int(frames[0][0, 0, 0]))
+
+        def act(self, frame: np.ndarray) -> int:
+            self.t += 1
+            if self.stages_given[-1] == 2:
+                return int(Action.MAKE_WOOD_PICKAXE.value)
+            return int(Action.PLACE_TABLE.value) if self.t % 2 == 0 else 1 + (self.t // 2) % 4
+
+    agent = Crafter()
+    picture = lambda i: [np.full((2, 2, 3), i, np.uint8)]  # noqa: E731
+    chain = [ChainStage("collect_wood", picture(0), "wood", 2), ChainStage("place_table", picture(1)),
+             ChainStage("make_wood_pickaxe", picture(2))]  # fmt: skip
+    res = evaluate_chain(lambda: Rich(), [AchievementTask("make_wood_pickaxe", seed=0, budget=30)],  # type: ignore[arg-type,return-value]
+                         lambda t: agent, chain, counts=lambda e: e.inventory())  # type: ignore[attr-defined,arg-type,return-value]  # fmt: skip
+    assert res["successes"] == [True] and res["ended"] == ["success"]
+    assert agent.stages_given == [0, 1, 2]

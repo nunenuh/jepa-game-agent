@@ -19,7 +19,7 @@ class CraftaxEnv:
     No auto-reset: Craftax's auto-reset swaps in a new world on the step the player dies, so the
     episode's last frame would show a different world. After `done`, call `reset`. The key schedule
     (split once per reset and per step) is shared with `data.craftax_batch`, so episodes collected
-    there replay here exactly.
+    there replay here (same game and length on one device; a few frames differ by 1/255, in rounding).
     """
 
     def __init__(self, name: str, seed: int = 0) -> None:
